@@ -7,7 +7,7 @@ dashboards as code, centralized JSON logging into OpenSearch, and an LLM-assiste
 incident copilot that proposes remediations a human must approve. It ends with a scripted
 game day and a correction-of-error review written from the real timeline.
 
-Everything runs locally with `docker compose` in about 2.3 GiB of RAM. No cloud accounts,
+Everything runs locally with `docker compose` in about 2 GiB of RAM. No cloud accounts,
 no API keys required (the copilot has a deterministic rules engine; Claude is optional).
 
 ## Architecture
