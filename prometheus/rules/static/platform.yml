@@ -1,0 +1,67 @@
+---
+# Hand-written cause/dependency alerts. SLO (symptom) alerts are generated from
+# slo/slos.yaml; these cover the cases where the SLI itself cannot be computed
+# (target gone, database gone) and the external synthetic probe.
+groups:
+  - name: platform
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: page
+          service: postgres
+          team: platform-sre
+        annotations:
+          summary: "Page: Postgres is unreachable from postgres_exporter"
+          description: >-
+            postgres_exporter reports pg_up == 0 for over a minute. Everything that
+            depends on the database (ticketing-api purchases) will fail; the
+            dependent SLO alerts are inhibited while this fires.
+          runbook_url: http://localhost:8001/runbooks/postgres-down.md
+          dashboard_url: http://localhost:3000/d/postgres/postgres
+
+      - alert: TargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: page
+          service: "{{ $labels.job }}"
+          team: platform-sre
+        annotations:
+          summary: "Page: scrape target {{ $labels.job }} ({{ $labels.instance }}) is down"
+          description: >-
+            Prometheus has not been able to scrape {{ $labels.instance }} for 2 minutes.
+            SLO alerts for this service are inhibited while it fires because the SLI has no data.
+          runbook_url: http://localhost:8001/runbooks/target-down.md
+          dashboard_url: http://localhost:3000/d/golden-signals/service-golden-signals
+
+      - alert: BlackboxProbeFailed
+        expr: probe_success{job="blackbox"} == 0
+        for: 2m
+        labels:
+          severity: page
+          service: ticketing-api
+          team: platform-sre
+        annotations:
+          summary: "Page: synthetic probe of {{ $labels.instance }} failing"
+          description: >-
+            blackbox_exporter cannot get a 2xx from {{ $labels.instance }} for 2 minutes.
+            This is the outside-in view; check whether the server-side SLI agrees.
+          runbook_url: http://localhost:8001/runbooks/blackbox-probe-failed.md
+          dashboard_url: http://localhost:3000/d/golden-signals/service-golden-signals
+
+      - alert: PrometheusRuleEvaluationFailures
+        expr: increase(prometheus_rule_evaluation_failures_total[10m]) > 0
+        for: 10m
+        labels:
+          severity: ticket
+          service: prometheus
+          team: platform-sre
+        annotations:
+          summary: "Ticket: Prometheus rule evaluations are failing"
+          description: >-
+            Some rule groups failed to evaluate in the last 10 minutes; SLO alerts may be
+            silently missing. See the Prometheus /rules page for the failing group.
+          runbook_url: http://localhost:8001/runbooks/prometheus-rule-evaluation-failures.md
+          dashboard_url: http://localhost:9090/rules

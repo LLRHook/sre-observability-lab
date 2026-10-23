@@ -1,0 +1,330 @@
+# GENERATED FILE - do not edit by hand.
+# Source: slo/slos.yaml via tools/slo_gen.py. Regenerate with `make rules`.
+---
+groups:
+- name: slo-ticketing-api-availability-recording
+  rules:
+  - record: slo:objective:ratio
+    expr: vector(0.999)
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:error_budget:ratio
+    expr: vector(0.001)
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate5m
+    expr: ((sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",status=~"5.."}[5m])))
+      or vector(0)) / (sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[5m])))
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate5m
+    expr: slo:sli_error:ratio_rate5m{slo="ticketing-api-availability"} / 0.001
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate30m
+    expr: ((sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",status=~"5.."}[30m])))
+      or vector(0)) / (sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[30m])))
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate30m
+    expr: slo:sli_error:ratio_rate30m{slo="ticketing-api-availability"} / 0.001
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate1h
+    expr: ((sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",status=~"5.."}[1h])))
+      or vector(0)) / (sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[1h])))
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate1h
+    expr: slo:sli_error:ratio_rate1h{slo="ticketing-api-availability"} / 0.001
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate2h
+    expr: ((sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",status=~"5.."}[2h])))
+      or vector(0)) / (sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[2h])))
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate2h
+    expr: slo:sli_error:ratio_rate2h{slo="ticketing-api-availability"} / 0.001
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate6h
+    expr: ((sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",status=~"5.."}[6h])))
+      or vector(0)) / (sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[6h])))
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate6h
+    expr: slo:sli_error:ratio_rate6h{slo="ticketing-api-availability"} / 0.001
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate1d
+    expr: ((sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",status=~"5.."}[1d])))
+      or vector(0)) / (sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[1d])))
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate1d
+    expr: slo:sli_error:ratio_rate1d{slo="ticketing-api-availability"} / 0.001
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate3d
+    expr: ((sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",status=~"5.."}[3d])))
+      or vector(0)) / (sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[3d])))
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate3d
+    expr: slo:sli_error:ratio_rate3d{slo="ticketing-api-availability"} / 0.001
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate30d
+    expr: ((sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",status=~"5.."}[30d])))
+      or vector(0)) / (sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[30d])))
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate30d
+    expr: slo:sli_error:ratio_rate30d{slo="ticketing-api-availability"} / 0.001
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+  - record: slo:error_budget_remaining:ratio
+    expr: 1 - (slo:sli_error:ratio_rate30d{slo="ticketing-api-availability"} / 0.001)
+    labels:
+      slo: ticketing-api-availability
+      service: ticketing-api
+- name: slo-ticketing-api-availability-alerts
+  rules:
+  - alert: TicketingApiAvailabilityBurnRatePage
+    expr: |-
+      (
+          slo:burn_rate:ratio_rate1h{slo="ticketing-api-availability"} > 14.4
+          and
+          slo:burn_rate:ratio_rate5m{slo="ticketing-api-availability"} > 14.4
+        )
+        or
+        (
+          slo:burn_rate:ratio_rate6h{slo="ticketing-api-availability"} > 6
+          and
+          slo:burn_rate:ratio_rate30m{slo="ticketing-api-availability"} > 6
+        )
+    for: 2m
+    labels:
+      severity: page
+      service: ticketing-api
+      slo: ticketing-api-availability
+      team: platform-sre
+    annotations:
+      summary: 'Page: ticketing-api-availability is burning error budget (14.4x over 1h/5m, 6x over 6h/30m)'
+      description: Customer-facing requests succeed (no 5xx), measured at the server. Objective 99.9% (error budget 0.1% of
+        requests over 30d). Both windows of at least one pair (14.4x over 1h/5m, 6x over 6h/30m) exceed their burn-rate threshold.
+        Check per-window burn and recent errors on the dashboard; the runbook lists the first diagnostic queries.
+      runbook_url: http://localhost:8001/runbooks/ticketing-api-availability.md
+      dashboard_url: http://localhost:3000/d/slo-overview/slo-overview?var-slo=ticketing-api-availability
+  - alert: TicketingApiAvailabilityBurnRateTicket
+    expr: |-
+      (
+          slo:burn_rate:ratio_rate1d{slo="ticketing-api-availability"} > 3
+          and
+          slo:burn_rate:ratio_rate2h{slo="ticketing-api-availability"} > 3
+        )
+        or
+        (
+          slo:burn_rate:ratio_rate3d{slo="ticketing-api-availability"} > 1
+          and
+          slo:burn_rate:ratio_rate6h{slo="ticketing-api-availability"} > 1
+        )
+    for: 5m
+    labels:
+      severity: ticket
+      service: ticketing-api
+      slo: ticketing-api-availability
+      team: platform-sre
+    annotations:
+      summary: 'Ticket: ticketing-api-availability is burning error budget (3x over 1d/2h, 1x over 3d/6h)'
+      description: Customer-facing requests succeed (no 5xx), measured at the server. Objective 99.9% (error budget 0.1% of
+        requests over 30d). Both windows of at least one pair (3x over 1d/2h, 1x over 3d/6h) exceed their burn-rate threshold.
+        Check per-window burn and recent errors on the dashboard; the runbook lists the first diagnostic queries.
+      runbook_url: http://localhost:8001/runbooks/ticketing-api-availability.md
+      dashboard_url: http://localhost:3000/d/slo-overview/slo-overview?var-slo=ticketing-api-availability
+- name: slo-ticketing-api-latency-recording
+  rules:
+  - record: slo:objective:ratio
+    expr: vector(0.99)
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:error_budget:ratio
+    expr: vector(0.01)
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate5m
+    expr: ((clamp_min( sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[5m]))
+      - sum(rate(http_request_duration_seconds_bucket{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",le="0.5"}[5m])),
+      0)) or vector(0)) / (sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[5m])))
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate5m
+    expr: slo:sli_error:ratio_rate5m{slo="ticketing-api-latency"} / 0.01
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate30m
+    expr: ((clamp_min( sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[30m]))
+      - sum(rate(http_request_duration_seconds_bucket{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",le="0.5"}[30m])),
+      0)) or vector(0)) / (sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[30m])))
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate30m
+    expr: slo:sli_error:ratio_rate30m{slo="ticketing-api-latency"} / 0.01
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate1h
+    expr: ((clamp_min( sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[1h]))
+      - sum(rate(http_request_duration_seconds_bucket{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",le="0.5"}[1h])),
+      0)) or vector(0)) / (sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[1h])))
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate1h
+    expr: slo:sli_error:ratio_rate1h{slo="ticketing-api-latency"} / 0.01
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate2h
+    expr: ((clamp_min( sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[2h]))
+      - sum(rate(http_request_duration_seconds_bucket{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",le="0.5"}[2h])),
+      0)) or vector(0)) / (sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[2h])))
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate2h
+    expr: slo:sli_error:ratio_rate2h{slo="ticketing-api-latency"} / 0.01
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate6h
+    expr: ((clamp_min( sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[6h]))
+      - sum(rate(http_request_duration_seconds_bucket{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",le="0.5"}[6h])),
+      0)) or vector(0)) / (sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[6h])))
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate6h
+    expr: slo:sli_error:ratio_rate6h{slo="ticketing-api-latency"} / 0.01
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate1d
+    expr: ((clamp_min( sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[1d]))
+      - sum(rate(http_request_duration_seconds_bucket{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",le="0.5"}[1d])),
+      0)) or vector(0)) / (sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[1d])))
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate1d
+    expr: slo:sli_error:ratio_rate1d{slo="ticketing-api-latency"} / 0.01
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate3d
+    expr: ((clamp_min( sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[3d]))
+      - sum(rate(http_request_duration_seconds_bucket{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",le="0.5"}[3d])),
+      0)) or vector(0)) / (sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[3d])))
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate3d
+    expr: slo:sli_error:ratio_rate3d{slo="ticketing-api-latency"} / 0.01
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:sli_error:ratio_rate30d
+    expr: ((clamp_min( sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[30d]))
+      - sum(rate(http_request_duration_seconds_bucket{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",le="0.5"}[30d])),
+      0)) or vector(0)) / (sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[30d])))
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:burn_rate:ratio_rate30d
+    expr: slo:sli_error:ratio_rate30d{slo="ticketing-api-latency"} / 0.01
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+  - record: slo:error_budget_remaining:ratio
+    expr: 1 - (slo:sli_error:ratio_rate30d{slo="ticketing-api-latency"} / 0.01)
+    labels:
+      slo: ticketing-api-latency
+      service: ticketing-api
+- name: slo-ticketing-api-latency-alerts
+  rules:
+  - alert: TicketingApiLatencyBurnRatePage
+    expr: |-
+      (
+          slo:burn_rate:ratio_rate1h{slo="ticketing-api-latency"} > 14.4
+          and
+          slo:burn_rate:ratio_rate5m{slo="ticketing-api-latency"} > 14.4
+        )
+        or
+        (
+          slo:burn_rate:ratio_rate6h{slo="ticketing-api-latency"} > 6
+          and
+          slo:burn_rate:ratio_rate30m{slo="ticketing-api-latency"} > 6
+        )
+    for: 2m
+    labels:
+      severity: page
+      service: ticketing-api
+      slo: ticketing-api-latency
+      team: platform-sre
+    annotations:
+      summary: 'Page: ticketing-api-latency is burning error budget (14.4x over 1h/5m, 6x over 6h/30m)'
+      description: 99% of customer-facing requests complete within 500 ms. Objective 99.0% (error budget 1% of requests over
+        30d). Both windows of at least one pair (14.4x over 1h/5m, 6x over 6h/30m) exceed their burn-rate threshold. Check
+        per-window burn and recent errors on the dashboard; the runbook lists the first diagnostic queries.
+      runbook_url: http://localhost:8001/runbooks/ticketing-api-latency.md
+      dashboard_url: http://localhost:3000/d/slo-overview/slo-overview?var-slo=ticketing-api-latency
+  - alert: TicketingApiLatencyBurnRateTicket
+    expr: |-
+      (
+          slo:burn_rate:ratio_rate1d{slo="ticketing-api-latency"} > 3
+          and
+          slo:burn_rate:ratio_rate2h{slo="ticketing-api-latency"} > 3
+        )
+        or
+        (
+          slo:burn_rate:ratio_rate3d{slo="ticketing-api-latency"} > 1
+          and
+          slo:burn_rate:ratio_rate6h{slo="ticketing-api-latency"} > 1
+        )
+    for: 5m
+    labels:
+      severity: ticket
+      service: ticketing-api
+      slo: ticketing-api-latency
+      team: platform-sre
+    annotations:
+      summary: 'Ticket: ticketing-api-latency is burning error budget (3x over 1d/2h, 1x over 3d/6h)'
+      description: 99% of customer-facing requests complete within 500 ms. Objective 99.0% (error budget 1% of requests over
+        30d). Both windows of at least one pair (3x over 1d/2h, 1x over 3d/6h) exceed their burn-rate threshold. Check per-window
+        burn and recent errors on the dashboard; the runbook lists the first diagnostic queries.
+      runbook_url: http://localhost:8001/runbooks/ticketing-api-latency.md
+      dashboard_url: http://localhost:3000/d/slo-overview/slo-overview?var-slo=ticketing-api-latency

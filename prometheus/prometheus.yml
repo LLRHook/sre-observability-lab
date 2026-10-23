@@ -1,0 +1,62 @@
+---
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    env: lab
+
+rule_files:
+  - /etc/prometheus/rules/generated/*.yml
+  - /etc/prometheus/rules/static/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [alertmanager:9093]
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: [localhost:9090]
+
+  - job_name: ticketing-api
+    static_configs:
+      - targets: [ticketing-api:8000]
+
+  - job_name: loadgen
+    static_configs:
+      - targets: [loadgen:8002]
+
+  - job_name: ops-copilot
+    static_configs:
+      - targets: [ops-copilot:8001]
+
+  - job_name: postgres
+    static_configs:
+      - targets: [postgres-exporter:9187]
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: [alertmanager:9093]
+
+  - job_name: fluent-bit
+    metrics_path: /api/v2/metrics/prometheus
+    static_configs:
+      - targets: [fluent-bit:2020]
+
+  # Synthetic probe: ask blackbox_exporter to hit the API from "outside".
+  - job_name: blackbox
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://ticketing-api:8000/healthz
+          - http://ticketing-api:8000/events
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

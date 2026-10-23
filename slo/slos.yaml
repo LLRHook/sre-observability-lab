@@ -1,0 +1,62 @@
+# Declarative SLO spec (OpenSLO-inspired, deliberately smaller).
+#
+# tools/slo_gen.py turns this file into prometheus/rules/generated/slo_rules.yml:
+#   - SLI error-ratio recording rules for every alerting window
+#   - burn-rate recording rules (error ratio / error budget)
+#   - error-budget-remaining recording rules over the SLO window
+#   - multi-window, multi-burn-rate alerts (Google SRE Workbook, "Alerting on SLOs")
+#
+# In a real organization this is the role Nobl9 (or Sloth/Pyrra) plays: the spec
+# is the contract, the rules are generated, nobody hand-edits PromQL for an SLO.
+#
+# Query templates use `[{{window}}]` where the generator substitutes the range.
+---
+apiVersion: lab/v1
+defaults:
+  window: 30d
+  # Burn-rate ladder from the SRE Workbook chapter "Alerting on SLOs" (section
+  # "6: Multiwindow, Multi-Burn-Rate Alerts"). Page rows are Table 5-8; the
+  # 3x/1d/2h ticket row is from the chapter's example rule, the 1x/3d/6h row from
+  # Table 5-8. Short window = long window / 12.
+  alerting:
+    page:
+      for: 2m
+      windows:
+        - {long: 1h, short: 5m, burn_rate: 14.4}
+        - {long: 6h, short: 30m, burn_rate: 6}
+    ticket:
+      for: 5m
+      windows:
+        - {long: 1d, short: 2h, burn_rate: 3}
+        - {long: 3d, short: 6h, burn_rate: 1}
+
+slos:
+  - name: ticketing-api-availability
+    service: ticketing-api
+    description: Customer-facing requests succeed (no 5xx), measured at the server
+    objective: 99.9
+    sli:
+      type: ratio
+      errors: >-
+        sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",status=~"5.."}[{{window}}]))
+      total: >-
+        sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[{{window}}]))
+    runbook_url: http://localhost:8001/runbooks/ticketing-api-availability.md
+    dashboard_url: http://localhost:3000/d/slo-overview/slo-overview?var-slo=ticketing-api-availability
+
+  - name: ticketing-api-latency
+    service: ticketing-api
+    description: 99% of customer-facing requests complete within 500 ms
+    objective: 99.0
+    sli:
+      type: ratio
+      # "Errors" are requests slower than the threshold: total minus the le=0.5 bucket.
+      errors: >-
+        clamp_min(
+          sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[{{window}}]))
+          - sum(rate(http_request_duration_seconds_bucket{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz",le="0.5"}[{{window}}])),
+          0)
+      total: >-
+        sum(rate(http_request_duration_seconds_count{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[{{window}}]))
+    runbook_url: http://localhost:8001/runbooks/ticketing-api-latency.md
+    dashboard_url: http://localhost:3000/d/slo-overview/slo-overview?var-slo=ticketing-api-latency

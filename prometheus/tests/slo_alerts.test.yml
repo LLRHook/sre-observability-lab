@@ -1,0 +1,111 @@
+---
+# promtool unit tests for the generated SLO alerts.
+#
+# Series notation: 'a+bxN' = start at a, add b every evaluation_interval, N times.
+# With evaluation_interval 1m, "0+300x..." is a counter growing 300/min = 5 rps.
+#
+# Three behaviours are pinned down here:
+#   1. a fast burn (50% errors) pages within a few minutes,
+#   2. a slow burn (0.4% errors, burn rate 4) opens a ticket but never pages,
+#   3. a one-minute blip trips the short window only and therefore does NOT page.
+rule_files:
+  - ../rules/generated/slo_rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ---------------------------------------------------------------- 1. fast burn
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="ticketing-api",route="/purchase",method="POST",status="201"}'
+        values: '0+300x200'
+      # No errors for the first hour, then 50% of traffic fails (300/min ok, 300/min 5xx).
+      - series: 'http_requests_total{job="ticketing-api",route="/purchase",method="POST",status="500"}'
+        values: '0x60 0+300x140'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: TicketingApiAvailabilityBurnRatePage
+        exp_alerts: []
+      # 1h window crosses 14.4x after ~2 min of 50% errors; plus `for: 2m` => firing by ~65m.
+      - eval_time: 66m
+        alertname: TicketingApiAvailabilityBurnRatePage
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              service: ticketing-api
+              slo: ticketing-api-availability
+              team: platform-sre
+            exp_annotations:
+              summary: "Page: ticketing-api-availability is burning error budget (14.4x over 1h/5m, 6x over 6h/30m)"
+              description: "Customer-facing requests succeed (no 5xx), measured at the server. Objective 99.9% (error budget 0.1% of requests over 30d). Both windows of at least one pair (14.4x over 1h/5m, 6x over 6h/30m) exceed their burn-rate threshold. Check per-window burn and recent errors on the dashboard; the runbook lists the first diagnostic queries."
+              runbook_url: http://localhost:8001/runbooks/ticketing-api-availability.md
+              dashboard_url: http://localhost:3000/d/slo-overview/slo-overview?var-slo=ticketing-api-availability
+    promql_expr_test:
+      # 50% errors against a 0.1% budget is a ~500x burn; rate() extrapolation makes
+      # the exact figure sample-aligned, so assert the magnitude, not the digits.
+      - expr: count(slo:burn_rate:ratio_rate5m{slo="ticketing-api-availability"} > 400)
+        eval_time: 70m
+        exp_samples:
+          - labels: '{}'
+            value: 1
+
+  # ---------------------------------------------------------------- 2. slow burn
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="ticketing-api",route="/events",method="GET",status="200"}'
+        values: '0+300x1500'
+      # 0.4% error rate sustained for 25 hours: burn rate 4 (> 3 for the 1d/2h ticket pair).
+      - series: 'http_requests_total{job="ticketing-api",route="/events",method="GET",status="500"}'
+        values: '0+1.2x1500'
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: TicketingApiAvailabilityBurnRatePage
+        exp_alerts: []
+      - eval_time: 25h
+        alertname: TicketingApiAvailabilityBurnRateTicket
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              service: ticketing-api
+              slo: ticketing-api-availability
+              team: platform-sre
+            exp_annotations:
+              summary: "Ticket: ticketing-api-availability is burning error budget (3x over 1d/2h, 1x over 3d/6h)"
+              description: "Customer-facing requests succeed (no 5xx), measured at the server. Objective 99.9% (error budget 0.1% of requests over 30d). Both windows of at least one pair (3x over 1d/2h, 1x over 3d/6h) exceed their burn-rate threshold. Check per-window burn and recent errors on the dashboard; the runbook lists the first diagnostic queries."
+              runbook_url: http://localhost:8001/runbooks/ticketing-api-availability.md
+              dashboard_url: http://localhost:3000/d/slo-overview/slo-overview?var-slo=ticketing-api-availability
+
+  # ---------------------------------------------------------------- 3. short blip
+  - interval: 1m
+    input_series:
+      # Three clean days first, so the 1d/3d windows have real history behind them.
+      - series: 'http_requests_total{job="ticketing-api",route="/purchase",method="POST",status="201"}'
+        values: '0+300x4500'
+      # Then one minute at 20% errors (60 of 360), then clean again.
+      - series: 'http_requests_total{job="ticketing-api",route="/purchase",method="POST",status="500"}'
+        values: '0x4320 60x180'
+    alert_rule_test:
+      # Short window (5m) is well above 14.4x right after the blip, but the 1h window is
+      # only ~0.33% / 0.1% = 3.3x. Multi-window AND means: no page, at any point.
+      - eval_time: 4322m
+        alertname: TicketingApiAvailabilityBurnRatePage
+        exp_alerts: []
+      - eval_time: 4325m
+        alertname: TicketingApiAvailabilityBurnRatePage
+        exp_alerts: []
+      - eval_time: 4330m
+        alertname: TicketingApiAvailabilityBurnRatePage
+        exp_alerts: []
+      - eval_time: 4330m
+        alertname: TicketingApiAvailabilityBurnRateTicket
+        exp_alerts: []
+    promql_expr_test:
+      # The short window alone *is* over the page threshold here. That is the point.
+      - expr: count(slo:burn_rate:ratio_rate5m{slo="ticketing-api-availability"} > 14.4)
+        eval_time: 4322m
+        exp_samples:
+          - labels: '{}'
+            value: 1
+      - expr: count(slo:burn_rate:ratio_rate1h{slo="ticketing-api-availability"} > 14.4)
+        eval_time: 4322m
+        exp_samples: []
