@@ -1,0 +1,68 @@
+---
+# Routing tree, grouping, timing and inhibition. Verified by alertmanager/tests/routes_test.sh
+# (amtool config routes test) in `make test` and CI.
+global:
+  resolve_timeout: 5m
+
+route:
+  # Everything that matches nothing more specific lands in the ticket queue:
+  # a quiet default is a feature. Nobody gets woken up by an unclassified alert.
+  receiver: ticket-queue
+  group_by: [alertname, service, slo]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  routes:
+    # Pages: fast first notification, re-notify hourly while unresolved.
+    - matchers:
+        - severity="page"
+      receiver: pager
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 1h
+
+    # Tickets: batch for a couple of minutes so one incident makes one ticket,
+    # and never re-notify more than daily.
+    - matchers:
+        - severity="ticket"
+      receiver: ticket-queue
+      group_wait: 2m
+      group_interval: 10m
+      repeat_interval: 24h
+
+receivers:
+  - name: pager
+    webhook_configs:
+      - url: http://ops-copilot:8001/alertmanager/webhook/pager
+        send_resolved: true
+        max_alerts: 20
+
+  - name: ticket-queue
+    webhook_configs:
+      - url: http://ops-copilot:8001/alertmanager/webhook/ticket-queue
+        send_resolved: true
+        max_alerts: 20
+
+inhibit_rules:
+  # 1. A page for an SLO silences the slow-burn ticket for the same SLO: the
+  #    responder is already looking at it, a ticket would be duplicate noise.
+  - source_matchers:
+      - severity="page"
+    target_matchers:
+      - severity="ticket"
+    equal: [service, slo]
+
+  # 2. Dependency down: if Postgres is gone, every ticketing-api symptom alert
+  #    is a consequence, not a separate incident. Only the cause should notify.
+  - source_matchers:
+      - alertname="PostgresDown"
+    target_matchers:
+      - service="ticketing-api"
+
+  # 3. If the scrape target itself is down, its SLI has no data. Page on the
+  #    target being down; suppress the derived SLO and probe alerts for that service.
+  - source_matchers:
+      - alertname="TargetDown"
+    target_matchers:
+      - alertname=~".*BurnRate(Page|Ticket)|BlackboxProbeFailed"
+    equal: [service]
