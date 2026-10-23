@@ -46,7 +46,7 @@ Burn rate 1 = exactly on budget; 14.4 = the whole budget gone in ~2 days.
 ## Escalation
 
 - Page -> primary on-call owns it. If not mitigated in 30 minutes, pull in the service owner.
-- Ticket -> service owner's queue; discuss at the weekly SLO review. If a ticket-level burn persists for 3 days, it becomes a page by construction (the 3d/6h pair at 1x).
+- Ticket -> service owner's queue; discuss at the weekly SLO review. A ticket-level burn never becomes a page on its own (the 3d/6h pair at 1x is still a ticket); if it persists, escalate it by hand before the budget runs out.
 
 ## Known noise
 

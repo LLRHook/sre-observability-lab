@@ -39,8 +39,8 @@ the same afternoon.
   evaluated at 12:48:30 returned 1,869).
 - Error budget: the 30-day availability budget (0.1% of requests, 43.2 minutes of full
   outage) went from 100% remaining to a negative value during the burn; the copilot's note
-  recorded `budget remaining=-125.572` at 12:44:34, computed over the ~3.5 hours of history
-  Prometheus had, not a full 30 days. In a month-old deployment the same six minutes at 50%
+  recorded `budget remaining=-125.572` at 12:44:34, computed over the less-than-an-hour of counter
+  history Prometheus had, not a full 30 days. In a month-old deployment the same six minutes at 50%
   would have cost about 7% of the monthly budget (3 error-minutes equivalent / 43.2).
 - Operational impact: one page, one inhibited ticket, zero duplicate pages. 81 webhook
   deliveries to the copilot instead of 1 (no customer effect; CPU and log noise only).
@@ -65,20 +65,22 @@ the same afternoon.
 | 12:52:52 | 11:11 | Prometheus | 5m burn rate 0.0; 30m/1h/6h still 153x |
 | 12:53:20 | 11:39 | operator | Copilot rebuilt with the webhook fix; next Alertmanager delivery at 12:54:19 returned 200 |
 | 13:17:39 | 35:58 | Prometheus | Page no longer firing (`endsAt` 13:17:39.39; last firing sample 13:17:30); 30m window clear of the burn |
-| 13:18:34 | 36:53 | ops-copilot | Resolved webhook received (`resolve_timeout`/group timing); incident status `resolved`, channel post `RESOLVED` |
+| 13:18:34 | 36:53 | ops-copilot | Resolved webhook received (next `group_interval` tick after Prometheus sent `endsAt`); incident status `resolved`, channel post `RESOLVED` |
 
 ## 4. Metrics
 
 - Detection: 43 s from injection to pending, 2 min 43 s to firing (the `for` clause is 2 min
-  of that). The 1h window needed 1.7 minutes at 500x burn to cross 14.4x, as the arithmetic
-  predicts (60 min x 14.4 / 500).
+  of that). The arithmetic predicts 1.7 minutes for a full 1h window at 500x burn
+  (60 min x 14.4 / 500); it was faster because the counters were younger than an hour, so
+  `rate(...[1h])` effectively measured only that short history.
 - Notification: 10 s from firing to the copilot incident (`group_wait: 10s`).
 - Triage: 97 ms from webhook to triage note (rules engine; no LLM call).
 - Time to mitigate: 6 min 8 s from injection, 3 min 25 s from page. The human step
   (reading the note and approving) was 3 min 15 s.
 - Time to page clear: 29 min 50 s after mitigation; incident closed 55 s after that.
-- Burn rates at triage: 5m 297x, 1h 127x, 6h 127x (all three equal because the service had
-  only 3.5 hours of history, so every window saw the same fraction).
+- Burn rates at triage: 5m 297x, 1h 127x, 6h 127x (1h and 6h equal, and equal to the 30d
+  figure behind `budget remaining=-125.572`, because the counters were younger than an hour:
+  every window longer than the series' lifetime returns the same lifetime ratio).
 - Webhook deliveries: 81 for one incident before the fix; 1 per `group_interval` after.
 
 ## 5. Detection, diagnosis, mitigation
@@ -149,7 +151,7 @@ nobody was watching.
 | # | Action | Owner | Priority | Due | Status |
 |---|---|---|---|---|---|
 | 1 | Fix the webhook log call (prefix result keys) and add an HTTP-level regression test | Victor Ivanov | P1 | 2026-10-23 | Done (commit "Fix webhook 500 caused by a LogRecord key collision found on the first game day") |
-| 2 | Add a static alert on `copilot` 5xx rate (`http_requests_total{job="ops-copilot",status=~"5.."}`) routed as a ticket, with a runbook | Victor Ivanov | P2 | 2026-10-30 | Open |
+| 2 | Add a static alert on webhook delivery failures (`alertmanager_notifications_failed_total{integration="webhook"}` today; the copilot does not yet export an HTTP status counter, add one first if alerting on its side) routed as a ticket, with a runbook | Victor Ivanov | P2 | 2026-10-30 | Open |
 | 3 | Decide and document the "resolved" semantics for pages: either annotate the page with the expected clear time per pair, or add a `resolved_early` note to the copilot when the 5m burn is 0 while the page is still firing | Victor Ivanov | P2 | 2026-11-06 | Open |
 | 4 | Raise the game-day script's page-clear wait to cover the 30m window (was 600 s) | Victor Ivanov | P3 | 2026-10-23 | Done |
 | 5 | Record `BlackboxProbeFailed` pending-only episodes in the noise report as expected during error injection; consider `for: 3m` for probe alerts on routes that share the SLO page | Victor Ivanov | P3 | 2026-11-13 | Open |

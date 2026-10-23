@@ -86,7 +86,7 @@ Requirements: Docker Desktop (or any Docker with Compose v2), `uv`, `make`. Host
 cp .env.example .env            # lab defaults; set ANTHROPIC_API_KEY to enable the LLM path
 make up                         # build + start; first run pulls images (~1.5 GB)
 make targets                    # every Prometheus target should be "up" within a minute
-open http://localhost:3000      # Grafana, anonymous viewer (admin/admin to edit)
+open http://localhost:3000      # Grafana, anonymous viewer (admin/admin to log in; provisioned dashboards are read-only, edit the JSON in grafana/)
 ```
 
 Run the scripted incident:

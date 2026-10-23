@@ -21,7 +21,7 @@ Alert: `PostgresDown` (severity page, service postgres).
 
 - Container dead: `docker compose up -d postgres` (data is on the `pgdata` volume).
 - Out of connections: check `pg_stat_database_numbackends` vs `max_connections`; restart the app pool.
-- Disk full: the lab disables the disk watermark; in production, free space or fail over.
+- Disk full: check `df` on the `pgdata` volume; in production, free space or fail over.
 
 ## Escalation
 
