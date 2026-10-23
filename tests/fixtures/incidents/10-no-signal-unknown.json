@@ -1,0 +1,79 @@
+{
+  "alert": {
+    "status": "firing",
+    "labels": {
+      "alertname": "TicketingApiAvailabilityBurnRatePage",
+      "severity": "page",
+      "service": "ticketing-api",
+      "team": "platform-sre",
+      "slo": "ticketing-api-availability"
+    },
+    "annotations": {
+      "summary": "Page: TicketingApiAvailabilityBurnRatePage",
+      "description": "recorded fixture",
+      "runbook_url": "http://localhost:8001/runbooks/ticketing-api-availability.md",
+      "dashboard_url": "http://localhost:3000/d/slo-overview/slo-overview"
+    },
+    "startsAt": "2026-10-23T14:02:15Z",
+    "endsAt": "0001-01-01T00:00:00Z",
+    "fingerprint": "fixture"
+  },
+  "context": {
+    "alert": {
+      "name": "TicketingApiAvailabilityBurnRatePage",
+      "labels": {
+        "alertname": "TicketingApiAvailabilityBurnRatePage",
+        "severity": "page",
+        "service": "ticketing-api",
+        "team": "platform-sre",
+        "slo": "ticketing-api-availability"
+      },
+      "annotations": {
+        "summary": "Page: TicketingApiAvailabilityBurnRatePage",
+        "description": "recorded fixture",
+        "runbook_url": "http://localhost:8001/runbooks/ticketing-api-availability.md",
+        "dashboard_url": "http://localhost:3000/d/slo-overview/slo-overview"
+      },
+      "starts_at": "2026-10-23T14:02:15Z"
+    },
+    "metrics": {
+      "service": "ticketing-api",
+      "slo": "ticketing-api-availability",
+      "errors": [
+        "burn_rate_5m: ConnectError",
+        "burn_rate_1h: ConnectError",
+        "burn_rate_6h: ConnectError"
+      ],
+      "burn_rate_5m": null,
+      "burn_rate_1h": null,
+      "burn_rate_6h": null,
+      "sli_error_ratio_5m": null,
+      "error_budget_remaining": null,
+      "request_rate": null,
+      "p99_latency_seconds": null,
+      "pg_up": null,
+      "chaos_error_rate": null,
+      "chaos_latency_ms": null,
+      "chaos_db_fault": null,
+      "target_up": null,
+      "errors_by_route": []
+    },
+    "logs": {
+      "error": "ConnectError",
+      "total": 0,
+      "top_messages": [],
+      "samples": []
+    },
+    "runbook": {
+      "name": "ticketing-api-availability.md",
+      "found": true,
+      "text": "# Runbook (fixture excerpt)"
+    }
+  },
+  "expected": {
+    "classification": "unknown",
+    "first_action": "acknowledge",
+    "min_confidence": 0.0
+  },
+  "note": "Recorded from the lab; expected values set by a human reviewer."
+}

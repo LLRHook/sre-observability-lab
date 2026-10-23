@@ -1,0 +1,75 @@
+{
+  "alert": {
+    "status": "firing",
+    "labels": {
+      "alertname": "TicketingApiLatencyBurnRatePage",
+      "severity": "page",
+      "service": "ticketing-api",
+      "team": "platform-sre",
+      "slo": "ticketing-api-latency"
+    },
+    "annotations": {
+      "summary": "Page: TicketingApiLatencyBurnRatePage",
+      "description": "recorded fixture",
+      "runbook_url": "http://localhost:8001/runbooks/ticketing-api-latency.md",
+      "dashboard_url": "http://localhost:3000/d/slo-overview/slo-overview"
+    },
+    "startsAt": "2026-10-23T14:02:15Z",
+    "endsAt": "0001-01-01T00:00:00Z",
+    "fingerprint": "fixture"
+  },
+  "context": {
+    "alert": {
+      "name": "TicketingApiLatencyBurnRatePage",
+      "labels": {
+        "alertname": "TicketingApiLatencyBurnRatePage",
+        "severity": "page",
+        "service": "ticketing-api",
+        "team": "platform-sre",
+        "slo": "ticketing-api-latency"
+      },
+      "annotations": {
+        "summary": "Page: TicketingApiLatencyBurnRatePage",
+        "description": "recorded fixture",
+        "runbook_url": "http://localhost:8001/runbooks/ticketing-api-latency.md",
+        "dashboard_url": "http://localhost:3000/d/slo-overview/slo-overview"
+      },
+      "starts_at": "2026-10-23T14:02:15Z"
+    },
+    "metrics": {
+      "service": "ticketing-api",
+      "slo": "ticketing-api-latency",
+      "errors": [],
+      "burn_rate_5m": 35.0,
+      "burn_rate_1h": 18.0,
+      "burn_rate_6h": 5.0,
+      "sli_error_ratio_5m": 0.35,
+      "error_budget_remaining": null,
+      "request_rate": 9.8,
+      "p99_latency_seconds": 1.9,
+      "pg_up": 1.0,
+      "chaos_error_rate": 0.0,
+      "chaos_latency_ms": 0.0,
+      "chaos_db_fault": 0.0,
+      "target_up": 1.0,
+      "errors_by_route": []
+    },
+    "logs": {
+      "total": 0,
+      "window_minutes": 15,
+      "top_messages": [],
+      "samples": []
+    },
+    "runbook": {
+      "name": "ticketing-api-availability.md",
+      "found": true,
+      "text": "# Runbook (fixture excerpt)"
+    }
+  },
+  "expected": {
+    "classification": "latency_degradation",
+    "first_action": "open_ticket",
+    "min_confidence": 0.5
+  },
+  "note": "Recorded from the lab; expected values set by a human reviewer."
+}

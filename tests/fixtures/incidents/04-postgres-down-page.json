@@ -1,0 +1,84 @@
+{
+  "alert": {
+    "status": "firing",
+    "labels": {
+      "alertname": "PostgresDown",
+      "severity": "page",
+      "service": "postgres",
+      "team": "platform-sre"
+    },
+    "annotations": {
+      "summary": "Page: PostgresDown",
+      "description": "recorded fixture",
+      "runbook_url": "http://localhost:8001/runbooks/postgres-down.md",
+      "dashboard_url": "http://localhost:3000/d/slo-overview/slo-overview"
+    },
+    "startsAt": "2026-10-23T14:02:15Z",
+    "endsAt": "0001-01-01T00:00:00Z",
+    "fingerprint": "fixture"
+  },
+  "context": {
+    "alert": {
+      "name": "PostgresDown",
+      "labels": {
+        "alertname": "PostgresDown",
+        "severity": "page",
+        "service": "postgres",
+        "team": "platform-sre"
+      },
+      "annotations": {
+        "summary": "Page: PostgresDown",
+        "description": "recorded fixture",
+        "runbook_url": "http://localhost:8001/runbooks/postgres-down.md",
+        "dashboard_url": "http://localhost:3000/d/slo-overview/slo-overview"
+      },
+      "starts_at": "2026-10-23T14:02:15Z"
+    },
+    "metrics": {
+      "service": "postgres",
+      "slo": "",
+      "errors": [],
+      "burn_rate_5m": null,
+      "burn_rate_1h": null,
+      "burn_rate_6h": null,
+      "sli_error_ratio_5m": null,
+      "error_budget_remaining": null,
+      "request_rate": null,
+      "p99_latency_seconds": null,
+      "pg_up": 0.0,
+      "chaos_error_rate": 0.0,
+      "chaos_latency_ms": 0.0,
+      "chaos_db_fault": 0.0,
+      "target_up": 1.0,
+      "errors_by_route": []
+    },
+    "logs": {
+      "total": 120,
+      "window_minutes": 15,
+      "top_messages": [
+        {
+          "msg": "database error during purchase",
+          "count": 120
+        }
+      ],
+      "samples": [
+        {
+          "level": "ERROR",
+          "msg": "database error during purchase",
+          "service": "ticketing-api"
+        }
+      ]
+    },
+    "runbook": {
+      "name": "ticketing-api-availability.md",
+      "found": true,
+      "text": "# Runbook (fixture excerpt)"
+    }
+  },
+  "expected": {
+    "classification": "dependency_failure",
+    "first_action": "open_ticket",
+    "min_confidence": 0.5
+  },
+  "note": "Recorded from the lab; expected values set by a human reviewer."
+}
