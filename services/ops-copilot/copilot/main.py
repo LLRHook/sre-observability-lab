@@ -104,7 +104,13 @@ def alertmanager_webhook(receiver: str, payload: AmWebhook) -> dict:
         INCIDENTS.labels("deduped").inc()
     for _ in result["resolved"]:
         INCIDENTS.labels("resolved").inc()
-    log.info("webhook handled", extra={"event": "webhook", "receiver": receiver, **result})
+    # Prefix the keys: "created" collides with logging.LogRecord.created and makes
+    # the logger raise (and the webhook return 500) after the work is already done.
+    log.info(
+        "webhook handled",
+        extra={"event": "webhook", "receiver": receiver}
+        | {f"incidents_{k}": v for k, v in result.items()},
+    )
     return result
 
 
