@@ -1,0 +1,264 @@
+---
+# SRE observability lab. Every image is pinned. Budget: whole stack under ~4 GiB.
+#
+#   make up        build + start everything
+#   make gameday   run the scripted incident end to end
+#   make down      stop (volumes kept)
+name: srelab
+
+x-fluentd-logging: &fluentd-logging
+  # Docker's fluentd log driver speaks Forward protocol to the fluent-bit
+  # container's published port. The daemon (inside the Docker Desktop VM) dials
+  # localhost:24224, which is the published port. fluentd-async buffers until
+  # fluent-bit is reachable so app containers can start in any order.
+  driver: fluentd
+  options:
+    fluentd-address: localhost:24224
+    fluentd-async: "true"
+    fluentd-sub-second-precision: "true"
+    tag: docker.{{.Name}}
+
+services:
+  # ------------------------------------------------------------------ data tier
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_USER: tickets
+      POSTGRES_PASSWORD: tickets
+      POSTGRES_DB: tickets
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tickets -d tickets"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    environment:
+      DATA_SOURCE_NAME: postgresql://tickets:tickets@postgres:5432/tickets?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ------------------------------------------------------------------ app tier
+  ticketing-api:
+    build:
+      context: .
+      dockerfile: services/ticketing-api/Dockerfile
+    image: srelab/ticketing-api:local
+    environment:
+      DATABASE_URL: postgresql://tickets:tickets@postgres:5432/tickets
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      fluent-bit:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=2)"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *fluentd-logging
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+  loadgen:
+    build:
+      context: .
+      dockerfile: services/loadgen/Dockerfile
+    image: srelab/loadgen:local
+    environment:
+      TARGET_URL: http://ticketing-api:8000
+      RATE_PER_SEC: ${LOADGEN_RATE:-10}
+    depends_on:
+      ticketing-api:
+        condition: service_healthy
+    logging: *fluentd-logging
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  ops-copilot:
+    build:
+      context: .
+      dockerfile: services/ops-copilot/Dockerfile
+    image: srelab/ops-copilot:local
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      OPENSEARCH_URL: http://opensearch:9200
+      OPENSEARCH_INDEX: srelab-logs-*
+      TICKETING_URL: http://ticketing-api:8000
+      TICKETING_ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      COPILOT_MODEL: ${COPILOT_MODEL:-claude-opus-5-5}
+      COPILOT_DATA_DIR: /data
+      RUNBOOK_DIR: /runbooks
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data/copilot:/data
+      - ./docs/runbooks:/runbooks:ro
+    depends_on:
+      fluent-bit:
+        condition: service_started
+    logging: *fluentd-logging
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ------------------------------------------------------------------ metrics
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.29.1
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - promdata:/prometheus
+    ports:
+      - "9090:9090"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  alertmanager:
+    image: prom/alertmanager:v0.34.1
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.external-url=http://localhost:9093
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - amdata:/alertmanager
+    ports:
+      - "9093:9093"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  grafana:
+    image: grafana/grafana:13.2.4
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      # Lab convenience: anyone can view dashboards without logging in.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_INSTALL_PLUGINS: grafana-opensearch-datasource 2.34.6
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ------------------------------------------------------------------ logging
+  opensearch:
+    image: opensearchproject/opensearch:3.9.0
+    environment:
+      discovery.type: single-node
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+      # Lab only: no TLS, no auth. See README "lab vs production".
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      bootstrap.memory_lock: "false"
+      # Keep the single node from going red/yellow over missing replicas.
+      cluster.routing.allocation.disk.threshold_enabled: "false"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - osdata:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=3s >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+
+  opensearch-init:
+    image: curlimages/curl:8.23.0
+    entrypoint: ["sh", "/bootstrap/bootstrap.sh"]
+    environment:
+      OPENSEARCH_URL: http://opensearch:9200
+    volumes:
+      - ./opensearch:/bootstrap:ro
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    restart: "no"
+
+  fluent-bit:
+    image: fluent/fluent-bit:5.1.5
+    command: ["-c", "/fluent-bit/etc/fluent-bit.yaml"]
+    volumes:
+      - ./fluent-bit/fluent-bit.yaml:/fluent-bit/etc/fluent-bit.yaml:ro
+    ports:
+      - "24224:24224"
+      - "2020:2020"
+    depends_on:
+      opensearch-init:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+volumes:
+  pgdata:
+  promdata:
+  amdata:
+  grafanadata:
+  osdata:

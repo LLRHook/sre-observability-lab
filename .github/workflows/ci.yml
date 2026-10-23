@@ -1,0 +1,55 @@
+---
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      PROM_IMAGE: prom/prometheus:v3.15.1
+      AM_IMAGE: prom/alertmanager:v0.34.1
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          version: "0.13.5"
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --frozen
+
+      - name: Ruff
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: yamllint
+        run: uv run yamllint -s .
+
+      - name: Unit tests
+        run: uv run pytest -q
+
+      - name: Generated artifacts are up to date
+        run: |
+          uv run python tools/slo_gen.py --check
+          uv run python tools/gen_dashboards.py --check
+
+      - name: promtool check + unit tests
+        run: |
+          docker run --rm -v "$PWD/prometheus:/p:ro" --entrypoint promtool "$PROM_IMAGE" check config /p/prometheus.yml
+          docker run --rm -v "$PWD/prometheus:/p:ro" --entrypoint promtool "$PROM_IMAGE" \
+            check rules /p/rules/generated/slo_rules.yml /p/rules/static/platform.yml
+          docker run --rm -v "$PWD/prometheus:/p:ro" -w /p/tests --entrypoint promtool "$PROM_IMAGE" \
+            test rules slo_alerts.test.yml platform_alerts.test.yml
+
+      - name: amtool check-config + routing assertions
+        run: ALERTMANAGER_IMAGE="$AM_IMAGE" ./alertmanager/tests/routes_test.sh
+
+      - name: docker compose config
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
