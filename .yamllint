@@ -1,0 +1,20 @@
+---
+extends: default
+ignore: |
+  .venv/
+  data/
+  uv.lock
+  prometheus/rules/generated/
+  # promtool exp_annotations must match the rule text exactly; long lines are inherent.
+  prometheus/tests/
+rules:
+  line-length:
+    max: 200
+    level: warning
+    allow-non-breakable-inline-mappings: true
+  document-start:
+    present: true
+  truthy:
+    allowed-values: ["true", "false", "on", "off"]
+  comments:
+    min-spaces-from-content: 1

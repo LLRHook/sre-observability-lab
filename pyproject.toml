@@ -1,0 +1,44 @@
+[project]
+name = "sre-observability-lab"
+version = "0.1.0"
+description = "Observability, SLO alerting, centralized logging and a human-approved LLM ops copilot, as a local lab"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "prometheus-client",
+    "psycopg[binary]",
+    "psycopg-pool",
+    "httpx",
+    "pydantic",
+    "pyyaml",
+    "anthropic",
+    "anyio",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+    "yamllint",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "W"]
+# The formatter owns line length; E501 only fires on long string literals.
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["services/ticketing-api", "services/ops-copilot", "tools", "."]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "copilot", "slo_gen", "alert_noise_report", "tests"]
