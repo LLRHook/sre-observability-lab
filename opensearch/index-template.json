@@ -1,0 +1,44 @@
+{
+  "index_patterns": ["srelab-logs-*"],
+  "priority": 100,
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "refresh_interval": "5s"
+    },
+    "mappings": {
+      "dynamic_templates": [
+        {
+          "strings_as_keywords": {
+            "match_mapping_type": "string",
+            "mapping": {"type": "keyword", "ignore_above": 1024}
+          }
+        }
+      ],
+      "properties": {
+        "@timestamp": {"type": "date"},
+        "ts": {"type": "keyword"},
+        "level": {"type": "keyword"},
+        "logger": {"type": "keyword"},
+        "service": {"type": "keyword"},
+        "container": {"type": "keyword"},
+        "source": {"type": "keyword"},
+        "request_id": {"type": "keyword"},
+        "event": {"type": "keyword"},
+        "route": {"type": "keyword"},
+        "method": {"type": "keyword"},
+        "path": {"type": "keyword"},
+        "status": {"type": "integer"},
+        "duration_ms": {"type": "float"},
+        "error_rate": {"type": "float"},
+        "latency_ms": {"type": "integer"},
+        "incident_id": {"type": "keyword"},
+        "fingerprint": {"type": "keyword"},
+        "msg": {"type": "text", "fields": {"keyword": {"type": "keyword", "ignore_above": 512}}},
+        "log": {"type": "text"},
+        "exc": {"type": "text"}
+      }
+    }
+  }
+}

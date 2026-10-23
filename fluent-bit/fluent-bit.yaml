@@ -1,0 +1,63 @@
+# Fluent Bit pipeline: Docker fluentd log driver -> forward input -> JSON parse -> OpenSearch.
+#
+# Containers that matter (ticketing-api, ops-copilot, loadgen) use Docker's
+# `fluentd` logging driver, which speaks the Fluentd Forward protocol to this
+# container on port 24224. Each record arrives as
+#   {log: "<raw line>", container_id, container_name, source}
+# The parser filter turns the JSON line in `log` into first-class fields.
+---
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_listen: 0.0.0.0
+  http_port: 2020
+  storage.metrics: on
+
+parsers:
+  - name: json_line
+    format: json
+    # Keep the app's own `ts` field as data; the record time comes from the log driver.
+    time_keep: true
+
+pipeline:
+  inputs:
+    - name: forward
+      listen: 0.0.0.0
+      port: 24224
+      buffer_chunk_size: 1M
+      buffer_max_size: 6M
+
+  filters:
+    # Parse the JSON log line; non-JSON lines (uvicorn banner, tracebacks) are kept
+    # verbatim in `log` so nothing is dropped on the floor.
+    - name: parser
+      match: 'docker.*'
+      key_name: log
+      parser: json_line
+      reserve_data: true
+      preserve_key: false
+
+    - name: modify
+      match: 'docker.*'
+      rename:
+        - container_name container
+      remove:
+        - container_id
+
+  outputs:
+    - name: opensearch
+      match: 'docker.*'
+      host: opensearch
+      port: 9200
+      logstash_format: on
+      logstash_prefix: srelab-logs
+      logstash_dateformat: '%Y.%m.%d'
+      time_key: '@timestamp'
+      suppress_type_name: on
+      replace_dots: on
+      generate_id: on
+      trace_error: on
+      retry_limit: 5
+
+# Add `- name: stdout` with `match: 'docker.*'` under outputs to echo every record.
