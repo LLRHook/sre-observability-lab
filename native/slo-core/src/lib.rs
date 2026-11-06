@@ -141,7 +141,7 @@ impl Py {
                 .iter()
                 .any(|(k, _)| k.kind() == "str" && k.string() == key)),
             "str" => Ok(self.string().contains(key)),
-            "list" | "tuple" => Ok(self
+            "list" | "tuple" | "set" => Ok(self
                 .items()
                 .iter()
                 .any(|v| v.kind() == "str" && v.string() == key)),
@@ -158,7 +158,7 @@ impl Py {
     fn iter(&self) -> Result<Vec<Py>> {
         match self.kind() {
             "dict" => Ok(self.pairs().into_iter().map(|(k, _)| k).collect()),
-            "list" | "tuple" => Ok(self.items()),
+            "list" | "tuple" | "bytes" | "set" => Ok(self.items()),
             "str" => Ok(self
                 .string()
                 .chars()
@@ -842,6 +842,26 @@ pub unsafe extern "C" fn slo_core_free(ptr: *mut u8, len: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn yaml_bytes_and_sets_supply_dictionary_item_iteration() {
+        let bytes = vec![
+            Py::literal(json!({"type":"int", "integer":"0x61", "str":"97"})),
+            Py::literal(json!({"type":"int", "integer":"0x62", "str":"98"})),
+        ];
+        for (kind, items) in [("bytes", bytes), ("set", vec![pystr("ab"), pystr("cd")])] {
+            let expected = items[0].string().to_owned();
+            let entry = Py::literal(json!({"type":kind,
+                "items":items.into_iter().map(|v| v.0).collect::<Vec<_>>()}));
+            assert_eq!(entry.iter().unwrap().len(), 2);
+            let config = Py::literal(json!({"type":"list", "items":[entry.0]}));
+            let pairs = as_dict(&config).unwrap();
+            assert_eq!(pairs.len(), 1);
+            assert_eq!(pairs[0].0.string(), expected);
+        }
+        let set = Py::literal(json!({"type":"set", "items":[pystr("{{window}}").0]}));
+        assert!(set.contains("{{window}}").unwrap());
+    }
 
     #[test]
     fn interpreter_error_metadata_preserves_operation_and_key_context() {

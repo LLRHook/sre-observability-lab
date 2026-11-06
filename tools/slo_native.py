@@ -191,6 +191,9 @@ class _Wire:
         elif isinstance(value, (list, tuple)):
             node["type"] = "list" if isinstance(value, list) else "tuple"
             node["items"] = [self._reference(v) for v in value]
+        elif isinstance(value, (bytes, set)):
+            node["type"] = "bytes" if isinstance(value, bytes) else "set"
+            node["items"] = [self._reference(v) for v in value]
         return node
 
     def unpack(self, value: dict[str, Any]) -> Any:

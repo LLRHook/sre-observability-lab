@@ -584,6 +584,54 @@ def test_dict_update_error_contract_after_a_valid_prefix(invalid_item):
     assert_parity("merged_alerting", source, source["slos"][0])
 
 
+@pytest.mark.parametrize("value", [b"ab", {"ab", "cd"}], ids=["bytes", "set"])
+def test_wire_preserves_yaml_iterable_contents(value):
+    wire = slo_native._Wire()
+    node = wire.pack(value)
+    items = [wire.unpack({"ref": item["node"]}) for item in node["items"]]
+    assert items == list(value)
+    assert wire.unpack({"ref": node["id"]}) is value
+
+
+@pytest.mark.parametrize("item", [b"ab", {"ab", "cd"}], ids=["bytes", "set"])
+def test_yaml_iterable_dict_items_preserve_helpers_generation_and_cli(item, tmp_path):
+    source = synthetic_spec()
+    page = source["defaults"]["alerting"]["page"]
+    source["defaults"]["alerting"]["page"] = [*page.items(), item]
+    text = yaml.safe_dump(source)
+    loaded = yaml.safe_load(text)
+    assert ORACLE.generate(loaded) == ORACLE.generate(synthetic_spec())
+    assert_parity("merged_alerting", loaded, loaded["slos"][0])
+    assert_parity("validate_spec", loaded)
+    assert_parity("generate", loaded)
+    spec_path = tmp_path / "spec.yaml"
+    spec_path.write_text(text)
+    output = tmp_path / "rules.yaml"
+    args = ["--spec", str(spec_path), "--out", str(output)]
+    expected = invoke_main(ORACLE.main, args)
+    expected_bytes = output.read_bytes()
+    assert invoke_main(slo_gen.main, args) == expected
+    assert output.read_bytes() == expected_bytes
+    assert invoke_main(slo_gen.main, [*args, "--check"]) == invoke_main(
+        ORACLE.main, [*args, "--check"]
+    )
+
+
+@pytest.mark.parametrize("item", [b"a", b"abc", {"one"}, {"one", "two", "three"}])
+def test_yaml_iterable_dict_items_keep_invalid_length_errors(item):
+    source = synthetic_spec()
+    page = source["defaults"]["alerting"]["page"]
+    source["defaults"]["alerting"]["page"] = [*page.items(), item]
+    assert_parity("merged_alerting", source, source["slos"][0])
+
+
+def test_yaml_set_membership_keeps_validation_and_render_error_order():
+    source = synthetic_spec()
+    source["slos"][0]["sli"]["errors"] = {"{{window}}"}
+    assert_parity("validate_spec", source)
+    assert_parity("generate", source)
+
+
 @pytest.mark.parametrize("invalid", [False, True])
 def test_wire_ignored_metadata_reaches_native_lookup(monkeypatch, invalid):
     source = synthetic_spec()
