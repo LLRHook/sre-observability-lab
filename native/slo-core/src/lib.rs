@@ -29,6 +29,12 @@ fn invalid(message: impl Into<String>) -> Error {
 fn protocol(message: impl Into<String>) -> Error {
     error("RuntimeError", message)
 }
+fn wire_error(failure: &Value) -> Option<Error> {
+    Some(error(
+        failure["type"].as_str()?,
+        failure["message"].as_str()?,
+    ))
+}
 
 /// An input value. Original Python objects have ids; synthetic merge maps and
 /// defaults have no id and are recursively materialized by output().
@@ -72,6 +78,9 @@ impl Py {
     }
     fn display(&self) -> Result<&str> {
         self.representation("str")
+    }
+    fn stored_error(&self, name: &str) -> Option<Error> {
+        wire_error(&self.0[name])
     }
     fn items(&self) -> Vec<Py> {
         self.0["items"]
@@ -123,6 +132,9 @@ impl Py {
             .ok_or_else(|| error("KeyError", key))
     }
     fn contains(&self, key: &str) -> Result<bool> {
+        if let Some(failure) = self.stored_error("contains_error") {
+            return Err(failure);
+        }
         match self.kind() {
             "dict" => Ok(self
                 .pairs()
@@ -264,6 +276,10 @@ fn as_dict(value: &Py) -> Result<Vec<(Py, Py)>> {
     let mut pairs = vec![];
     for (index, entry) in value.iter()?.iter().enumerate() {
         let items = entry.iter().map_err(|_| {
+            if let Some(mut failure) = entry.stored_error("dict_item_error") {
+                failure.message = failure.message.replace("#0", &format!("#{index}"));
+                return failure;
+            }
             error(
                 "TypeError",
                 format!("cannot convert dictionary update sequence element #{index} to a sequence"),
@@ -281,22 +297,20 @@ fn as_dict(value: &Py) -> Result<Vec<(Py, Py)>> {
 }
 
 fn update(pairs: &mut Vec<(Py, Py)>, additions: Vec<(Py, Py)>) -> Result<()> {
-    fn check_key(key: &Py) -> Result<()> {
+    fn unhashable(key: &Py) -> Option<String> {
         if ["list", "dict", "set"].contains(&key.kind()) {
-            return Err(error(
-                "TypeError",
-                format!("unhashable type: '{}'", key.kind()),
-            ));
+            return Some(key.kind().to_owned());
         }
         if key.kind() == "tuple" {
-            for child in key.items() {
-                check_key(&child)?;
-            }
+            return key.items().iter().find_map(unhashable);
         }
-        Ok(())
+        None
     }
     for (key, value) in additions {
-        check_key(&key)?;
+        if let Some(kind) = unhashable(&key) {
+            return Err(wire_error(&key.0["dict_key_errors"][kind.as_str()])
+                .unwrap_or_else(|| error("TypeError", format!("unhashable type: '{kind}'"))));
+        }
         if let Some((_, v)) = pairs.iter_mut().find(|(k, _)| equal(k, &key)) {
             *v = value;
         } else {
@@ -828,6 +842,39 @@ pub unsafe extern "C" fn slo_core_free(ptr: *mut u8, len: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interpreter_error_metadata_preserves_operation_and_key_context() {
+        let scalar = Py::literal(json!({"type":"NoneType",
+            "contains_error":{"type":"TypeError", "message":"current membership wording"}}));
+        assert_eq!(
+            scalar.contains("x").unwrap_err().message,
+            "current membership wording"
+        );
+        for message in [
+            "current iteration wording",
+            "sequence element #0 conversion failed",
+        ] {
+            let sequence = Py::literal(json!({"type":"list", "items":[
+                {"type":"tuple", "items":[pystr("for").0, pystr("0m").0]},
+                {"type":"int", "dict_item_error":{"type":"TypeError", "message":message}}
+            ]}));
+            assert_eq!(
+                as_dict(&sequence).unwrap_err().message,
+                message.replace("#0", "#1")
+            );
+        }
+        let key = Py::literal(
+            json!({"type":"tuple", "items":[{"type":"list", "items":[]}],
+            "dict_key_errors":{"list":{"type":"TypeError","message":"tuple key with list"}}}),
+        );
+        assert_eq!(
+            update(&mut vec![], vec![(key, pystr("unused"))])
+                .unwrap_err()
+                .message,
+            "tuple key with list"
+        );
+    }
 
     #[test]
     fn numeric_key_comparisons_do_not_round_integers() {

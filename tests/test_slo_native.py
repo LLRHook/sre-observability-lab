@@ -561,6 +561,29 @@ def test_wire_numeric_keys_retain_exact_integers():
     assert nodes[5]["integer"] == hex(values[5])
 
 
+def test_wire_builtin_error_metadata_matches_the_running_interpreter():
+    wire = slo_native._Wire()
+    for value in (None, 1):
+        node = wire.pack(value)
+        expected = outcome(lambda value=value: "{{window}}" in value)
+        assert (node["contains_error"]["type"], node["contains_error"]["message"]) == expected[1:]
+        expected = outcome(lambda value=value: dict([value]))
+        assert (node["dict_item_error"]["type"], node["dict_item_error"]["message"]) == expected[1:]
+    for value in ([], ([],)):
+        node = wire.pack(value)
+        expected = outcome(lambda value=value: {value: None})
+        failure = node["dict_key_errors"]["list"]
+        assert (failure["type"], failure["message"]) == expected[1:]
+
+
+@pytest.mark.parametrize("invalid_item", [None, 1, ([], 1)])
+def test_dict_update_error_contract_after_a_valid_prefix(invalid_item):
+    source = synthetic_spec()
+    page = source["defaults"]["alerting"]["page"]
+    source["defaults"]["alerting"]["page"] = [("windows", page["windows"]), invalid_item]
+    assert_parity("merged_alerting", source, source["slos"][0])
+
+
 @pytest.mark.parametrize("invalid", [False, True])
 def test_wire_ignored_metadata_reaches_native_lookup(monkeypatch, invalid):
     source = synthetic_spec()

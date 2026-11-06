@@ -13,6 +13,7 @@ import ctypes
 import hashlib
 import json
 import math
+import operator
 import platform
 import secrets
 import struct
@@ -154,6 +155,15 @@ class _Wire:
             node["number"] = {"bits": struct.pack("!d", float(value)).hex()}
         except Exception as exc:
             node["number"] = {"error": {"type": type(exc).__name__, "message": str(exc)}}
+        # CPython's built-in error text changes between supported releases.
+        # Carry those primitive-operation errors, while Rust still decides
+        # whether/when validation, dict conversion or key insertion occurs.
+        if type(value) in (type(None), bool, int, float, complex, bytes):
+            node["contains_error"] = _operation_error(operator.contains, value, "{{window}}")
+            if type(value) is not bytes:
+                node["dict_item_error"] = _operation_error(dict, [value])
+        if type(value) in (dict, list, set, tuple):
+            node["dict_key_errors"] = _dict_key_errors()[type(value).__name__]
         # Hex is exact and is not subject to Python's decimal digit limit.
         # Integral floats use the same canonical form for Python key equality.
         if isinstance(value, (int, bool)):
@@ -212,6 +222,31 @@ class _Wire:
         if "none" in value:
             return None
         raise RuntimeError("invalid SLO native result")
+
+
+def _operation_error(operation, *args):
+    try:
+        operation(*args)
+    except Exception as exc:
+        return {"type": type(exc).__name__, "message": str(exc)}
+    return None
+
+
+def _as_dict_key(value):
+    return {value: None}
+
+
+@lru_cache(maxsize=1)
+def _dict_key_errors():
+    # Probe fixed built-in examples, never hash arbitrary ignored metadata.
+    examples = {"dict": {}, "list": [], "set": set()}
+    result = {
+        kind: {kind: _operation_error(_as_dict_key, value)} for kind, value in examples.items()
+    }
+    result["tuple"] = {
+        kind: _operation_error(_as_dict_key, (value,)) for kind, value in examples.items()
+    }
+    return result
 
 
 def call(operation: str, *args: Any) -> Any:
