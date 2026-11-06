@@ -58,8 +58,9 @@ flowchart LR
     GRAF --> OS
 ```
 
-The spec `slo/slos.yaml` is the source of truth for SLOs. `tools/slo_gen.py` turns it into
-Prometheus recording and alerting rules (`prometheus/rules/generated/`), which promtool unit
+The spec `slo/slos.yaml` is the source of truth for SLOs. `tools/slo_gen.py` parses it and
+calls the Rust SLO core in-process to construct Prometheus recording and alerting rules
+(`prometheus/rules/generated/`), which promtool unit
 tests exercise with synthetic traffic. In a real organization that role is played by Nobl9
 (or Sloth/Pyrra); here the spec plus generator stands in for it.
 
@@ -102,17 +103,58 @@ Or break things by hand and watch: `make chaos-errors`, `make chaos-latency MS=8
 `make chaos-db`, `make chaos-reset`. Alerts: http://localhost:9090/alerts and
 http://localhost:9093. Copilot incidents: http://localhost:8001/incidents.
 
-Quality gate (what CI runs): `make test` = ruff, yamllint, pytest, generated-rules and
+Quality gate (what CI runs): `make test` = Rust build/tests/clippy/format, ruff, yamllint,
+pytest, generated-rules and
 dashboards freshness checks, `promtool check` and `promtool test rules`, `amtool check-config`
 plus routing assertions, `docker compose config`.
 
 Stop: `make down` (volumes kept) or `make clean` (volumes and local data removed).
 
+## SLO generator development
+
+Generating rules and running Python tests require a Rust toolchain with Cargo as well as
+the Python dependencies (`uv sync --frozen`). `make rules`, `make rules-check` and `make unit`
+explicitly build and stage the host native library before running Python. To use the CLI or
+Python imports directly, build once first:
+
+```bash
+uv run python tools/build_slo_native.py
+uv run python tools/slo_gen.py --check
+uv run python tools/slo_gen.py --spec slo/slos.yaml --out /tmp/slo-rules.yml
+uv run pytest -q tests/test_slo_gen.py tests/test_slo_native.py
+```
+
+The build script uses Cargo's artifact messages, including when `CARGO_TARGET_DIR` is set,
+and stages the library under ignored `tools/_native/<os>-<architecture>/`. Lookup supports
+macOS, Linux and Windows on x86_64/aarch64 and verifies the source fingerprint, library
+checksum and ABI. Rebuild after changing Rust source or its manifest/lockfile. Imports never
+compile, install or fall back to the legacy generator; missing, stale or incompatible
+artifacts produce an explicit build instruction. Build on the host that will run Python.
+
+Rust owns duration grammar/arithmetic, spec validation, default/override merging, objective
+and error-budget arithmetic, window ordering, PromQL substitution, and recording/alert rule
+construction. Python retains PyYAML I/O, CLI/file handling, the ctypes wire adapter and Python
+scalar coercion/representation/formatting (including `.6g`, `g` and `.3g` text) and
+interpreter-specific built-in error text. The
+identity-preserving wire graph keeps ignored recursive metadata opaque and lets
+integer merge keys retain Python's exact equality. Representation errors are raised only
+when the generator reads that representation. A full spec
+uses one native call, with no per-rule processes. FastAPI, the copilot and dashboards retain
+their existing languages. No performance improvement is claimed.
+
+The frozen original Python generator under `tests/oracles/` is a test oracle only.
+Differential tests compare rule structures, golden YAML, ordering, numeric text, Unicode,
+coercion and errors; packaging tests exercise missing/stale libraries and buffer ownership.
+CI builds before imports and runs these checks on Linux plus macOS/Windows host jobs, while
+retaining the Prometheus, Alertmanager and Compose validation gates.
+
 ## Repository map
 
 ```
 slo/slos.yaml                      SLO spec (the thing humans edit)
-tools/slo_gen.py                   spec -> Prometheus rules (multi-window multi-burn-rate)
+tools/slo_gen.py                   YAML/CLI/import adapter -> in-process Rust SLO core
+tools/build_slo_native.py          explicit host library build and staging
+native/slo-core/                   Rust spec validation, merge, duration and rule construction
 tools/gen_dashboards.py            Grafana dashboards as code
 tools/gameday.py                   scripted incident with real timestamps
 tools/alert_noise_report.py        alert history -> counts, flaps, TTR, recommendations

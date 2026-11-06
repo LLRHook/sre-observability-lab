@@ -41,4 +41,4 @@ testpaths = ["tests"]
 pythonpath = ["services/ticketing-api", "services/ops-copilot", "tools", "."]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app", "copilot", "slo_gen", "alert_noise_report", "tests"]
+known-first-party = ["app", "copilot", "slo_gen", "slo_native", "build_slo_native", "alert_noise_report", "tests"]
