@@ -182,7 +182,8 @@ API and an audit log. Section 3 covers its threat model; section 4 walks the cod
 
 ### Supporting tools
 
-- `tools/slo_gen.py`: SLO spec -> rules. Stands in for Nobl9/Sloth/Pyrra.
+- `tools/slo_gen.py` + `native/slo-core/`: YAML/CLI adapter -> in-process Rust SLO
+  validation and rules. Stands in for Nobl9/Sloth/Pyrra.
 - `tools/gameday.py`: the scripted incident.
 - `tools/alert_noise_report.py`: alert history -> pruning evidence.
 - `tools/copilotctl.py`: list/approve/reject from the terminal.
@@ -558,8 +559,18 @@ slos:
         sum(rate(http_requests_total{job="ticketing-api",route!~"/metrics|/admin.*|/healthz|/readyz"}[{{window}}]))
 ```
 
-The generator collects every window the alert ladder needs (5m, 30m, 1h, 2h, 6h, 1d, 3d)
-plus the SLO window (30d) and emits one error-ratio and one burn-rate rule per window:
+`tools/slo_gen.py` retains YAML parsing/serialization and its Python import/CLI contracts.
+The processing core is `native/slo-core/src/lib.rs`: duration parsing, validation, inherited
+defaults/overrides, objective/budget arithmetic, stable window ordering, PromQL substitution,
+labels and complete recording/alert groups. `tools/slo_native.py` makes one in-process ctypes
+call per spec and retains Python scalar representations and exact general-format numeric
+text. The build is explicit (`make slo-native`), with host-specific staging and source/ABI
+checks; there is no runtime compilation or Python algorithm fallback.
+
+The core collects every window the alert ladder needs (5m, 30m, 1h, 2h, 6h, 1d, 3d)
+plus the SLO window (30d) and emits one error-ratio and one burn-rate rule per window. This
+Python pseudocode illustrates the same construction (the frozen Python test oracle retains
+the original implementation):
 
 ```python
 for window in windows:
@@ -630,7 +641,12 @@ which renders to the committed, generated rule:
 `test_committed_rules_are_up_to_date` does the same from pytest. The generator's own tests
 pin the ladder (`test_alerts_follow_sre_workbook_ladder`), the 1/12 ratio
 (`test_short_window_is_one_twelfth_of_long_window`), the division by budget and the spec
-validation errors.
+validation errors. `tests/test_slo_native.py` adds differential valid/invalid mutations against
+that immutable test oracle, byte-for-byte YAML comparisons, error type/message compatibility,
+Unicode/duration/coercion coverage, explicit packaging/architecture checks and ABI ownership
+tests. CI builds the Rust library before pytest or generated-artifact checks; additional
+macOS and Windows jobs exercise the host packaging path. See the README's generator
+development section for direct CLI/import setup.
 
 ### 4.3 Proving the alerts behave (`prometheus/tests/slo_alerts.test.yml`)
 

@@ -22,6 +22,13 @@ jobs:
       - name: Install
         run: uv sync --frozen
 
+      - name: Rust SLO core (build before Python imports)
+        run: |
+          cargo fmt --manifest-path native/slo-core/Cargo.toml --check
+          cargo clippy --manifest-path native/slo-core/Cargo.toml --locked --all-targets -- -D warnings
+          cargo test --manifest-path native/slo-core/Cargo.toml --locked
+          uv run python tools/build_slo_native.py
+
       - name: Ruff
         run: |
           uv run ruff check .
@@ -53,3 +60,27 @@ jobs:
         run: |
           cp .env.example .env
           docker compose config --quiet
+
+  native-platforms:
+    name: SLO native compatibility (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          version: "0.13.5"
+          enable-cache: true
+      - name: Install
+        run: uv sync --frozen
+      - name: Rust core and host packaging
+        run: |
+          cargo test --manifest-path native/slo-core/Cargo.toml --locked
+          uv run python tools/build_slo_native.py
+      - name: Python imports, differential oracle, CLI and golden rules
+        run: |
+          uv run pytest -q tests/test_slo_gen.py tests/test_slo_native.py
+          uv run python tools/slo_gen.py --check

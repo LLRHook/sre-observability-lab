@@ -12,7 +12,7 @@ export
 
 .PHONY: help up down build ps logs restart test lint fmt unit rules rules-check dashboards dashboards-check \
         promtool amtool yamllint compose-config gameday approve reject incidents noise-report \
-        chaos-errors chaos-latency chaos-db chaos-reset targets stats clean
+        chaos-errors chaos-latency chaos-db chaos-reset targets stats clean slo-native native-test native-lint
 
 help: ## Show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -43,7 +43,7 @@ restart: ## Restart one service: make restart SERVICE=prometheus
 	@echo "created .env from .env.example"
 
 # ---------------------------------------------------------------- quality
-test: lint unit rules-check dashboards-check promtool amtool compose-config ## Everything CI runs
+test: lint native-lint native-test unit rules-check dashboards-check promtool amtool compose-config ## Everything CI runs
 
 lint: ## ruff + yamllint
 	$(UV) ruff check .
@@ -54,13 +54,23 @@ fmt: ## Format Python
 	$(UV) ruff format .
 	$(UV) ruff check --fix .
 
-unit: ## pytest
+unit: slo-native ## pytest
 	$(UV) pytest -q
 
-rules: ## Regenerate SLO rules from slo/slos.yaml
+slo-native: ## Explicitly build and stage the host Rust SLO library (requires Cargo)
+	$(UV) python tools/build_slo_native.py
+
+native-test: ## Rust core tests
+	cargo test --manifest-path native/slo-core/Cargo.toml --locked
+
+native-lint: ## Rust format and clippy
+	cargo fmt --manifest-path native/slo-core/Cargo.toml --check
+	cargo clippy --manifest-path native/slo-core/Cargo.toml --locked --all-targets -- -D warnings
+
+rules: slo-native ## Regenerate SLO rules from slo/slos.yaml
 	$(UV) python tools/slo_gen.py
 
-rules-check: ## Fail if generated rules are stale
+rules-check: slo-native ## Fail if generated rules are stale
 	$(UV) python tools/slo_gen.py --check
 
 dashboards: ## Regenerate Grafana dashboards JSON
