@@ -134,7 +134,10 @@ artifacts produce an explicit build instruction. Build on the host that will run
 Rust owns duration grammar/arithmetic, spec validation, default/override merging, objective
 and error-budget arithmetic, window ordering, PromQL substitution, and recording/alert rule
 construction. Python retains PyYAML I/O, CLI/file handling, the ctypes wire adapter and Python
-scalar coercion/representation/formatting (including `.6g`, `g` and `.3g` text). A full spec
+scalar coercion/representation/formatting (including `.6g`, `g` and `.3g` text). The
+identity-preserving wire graph keeps ignored recursive metadata opaque and lets
+integer merge keys retain Python's exact equality. Representation errors are raised only
+when the generator reads that representation. A full spec
 uses one native call, with no per-rule processes. FastAPI, the copilot and dashboards retain
 their existing languages. No performance improvement is claimed.
 

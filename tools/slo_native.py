@@ -12,6 +12,7 @@ import builtins
 import ctypes
 import hashlib
 import json
+import math
 import platform
 import secrets
 import struct
@@ -91,6 +92,9 @@ def _library():
 class _Wire:
     def __init__(self):
         self.refs: list[Any] = []
+        self.nodes: list[dict[str, Any]] = []
+        self._ids: dict[int, int] = {}
+        self._packed = 0
         self.surrogates: dict[str, str] = {}
         self.marker = "\0SLOSURROGATE" + secrets.token_hex(16)
 
@@ -117,20 +121,45 @@ class _Wire:
         return text
 
     def pack(self, value: Any) -> dict[str, Any]:
-        index = len(self.refs)
-        self.refs.append(value)
-        node: dict[str, Any] = {
-            "id": index,
-            "type": type(value).__name__,
-            "str": str(value),
-            "repr": repr(value),
-        }
+        # A flat object graph preserves aliases and cycles without recursive
+        # descent. The original object remains the output ref.
+        root = self._reference(value)["node"]
+        while self._packed < len(self.refs):
+            index = self._packed
+            self._packed += 1
+            self.nodes[index].update(self._pack_node(self.refs[index]))
+        return self.nodes[root]
+
+    def _reference(self, value: Any) -> dict[str, int]:
+        identity = id(value)
+        if identity not in self._ids:
+            self._ids[identity] = len(self.refs)
+            self.refs.append(value)
+            self.nodes.append({"id": len(self.nodes)})
+        return {"node": self._ids[identity]}
+
+    def _pack_node(self, value: Any) -> dict[str, Any]:
+        node: dict[str, Any] = {"type": type(value).__name__}
+        # Representation can fail even for an otherwise valid ignored value
+        # (e.g. Python's large decimal-int limit). Rust raises it only when the
+        # legacy operation would actually require that representation.
+        for name, function in (("str", str), ("repr", repr)):
+            try:
+                node[name] = function(value)
+            except Exception as exc:
+                node[name + "_error"] = {"type": type(exc).__name__, "message": str(exc)}
         # Coercion metadata is lazy *in Rust*: a conversion error is raised only
         # if that operation actually requests float(value). No validation here.
         try:
             node["number"] = {"bits": struct.pack("!d", float(value)).hex()}
-        except (ValueError, TypeError, OverflowError) as exc:
+        except Exception as exc:
             node["number"] = {"error": {"type": type(exc).__name__, "message": str(exc)}}
+        # Hex is exact and is not subject to Python's decimal digit limit.
+        # Integral floats use the same canonical form for Python key equality.
+        if isinstance(value, (int, bool)):
+            node["integer"] = hex(int(value))
+        elif isinstance(value, float) and math.isfinite(value) and value.is_integer():
+            node["integer"] = hex(int(value))
         if isinstance(value, str):
             node["type"] = "str"
             node["capitalize_parts"] = "".join(part.capitalize() for part in value.split("-"))
@@ -148,10 +177,10 @@ class _Wire:
                     node["int_error"] = str(exc)
         elif isinstance(value, dict):
             node["type"] = "dict"
-            node["items"] = [[self.pack(k), self.pack(v)] for k, v in value.items()]
+            node["items"] = [[self._reference(k), self._reference(v)] for k, v in value.items()]
         elif isinstance(value, (list, tuple)):
             node["type"] = "list" if isinstance(value, list) else "tuple"
-            node["items"] = [self.pack(v) for v in value]
+            node["items"] = [self._reference(v) for v in value]
         return node
 
     def unpack(self, value: dict[str, Any]) -> Any:
@@ -187,8 +216,9 @@ class _Wire:
 
 def call(operation: str, *args: Any) -> Any:
     wire = _Wire()
+    arguments = [{"node": wire.pack(v)["id"]} for v in args]
     payload = json.dumps(
-        wire.json_safe({"abi": ABI, "op": operation, "args": [wire.pack(v) for v in args]}),
+        wire.json_safe({"abi": ABI, "op": operation, "args": arguments, "nodes": wire.nodes}),
         ensure_ascii=True,
         allow_nan=False,
     ).encode()
@@ -210,6 +240,7 @@ def call(operation: str, *args: Any) -> Any:
                 "KeyError",
                 "AttributeError",
                 "OverflowError",
+                "RecursionError",
             }:
                 raise RuntimeError(error["message"])
             raise getattr(builtins, kind)(wire.restore(error["message"]))

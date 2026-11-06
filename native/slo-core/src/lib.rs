@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use std::cmp::Ordering;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::slice;
+use std::sync::Arc;
 
 const ABI: u32 = 1;
 type Result<T> = std::result::Result<T, Error>;
@@ -32,9 +33,22 @@ fn protocol(message: impl Into<String>) -> Error {
 /// An input value. Original Python objects have ids; synthetic merge maps and
 /// defaults have no id and are recursively materialized by output().
 #[derive(Debug, Clone)]
-struct Py(Value);
+struct Py(Value, Arc<Vec<Value>>);
 
 impl Py {
+    fn literal(value: Value) -> Self {
+        Self(value, Arc::default())
+    }
+    fn resolve(value: Value, nodes: Arc<Vec<Value>>) -> Self {
+        let value = value["node"]
+            .as_u64()
+            .and_then(|id| nodes.get(id as usize).cloned())
+            .unwrap_or(value);
+        Self(value, nodes)
+    }
+    fn child(&self, value: &Value) -> Self {
+        Self::resolve(value.clone(), Arc::clone(&self.1))
+    }
     fn kind(&self) -> &str {
         self.0["type"].as_str().unwrap_or("unknown")
     }
@@ -44,16 +58,31 @@ impl Py {
     fn repr(&self) -> &str {
         self.0["repr"].as_str().unwrap_or("")
     }
+    fn representation(&self, name: &str) -> Result<&str> {
+        if let Some(value) = self.0[name].as_str() {
+            return Ok(value);
+        }
+        let failure = &self.0[format!("{name}_error")];
+        Err(error(
+            failure["type"].as_str().unwrap_or("RuntimeError"),
+            failure["message"]
+                .as_str()
+                .unwrap_or("missing scalar representation"),
+        ))
+    }
+    fn display(&self) -> Result<&str> {
+        self.representation("str")
+    }
     fn items(&self) -> Vec<Py> {
         self.0["items"]
             .as_array()
-            .map(|a| a.iter().cloned().map(Py).collect())
+            .map(|a| a.iter().map(|v| self.child(v)).collect())
             .unwrap_or_default()
     }
     fn pairs(&self) -> Vec<(Py, Py)> {
         self.items()
             .into_iter()
-            .map(|v| (Py(v.0[0].clone()), Py(v.0[1].clone())))
+            .map(|v| (self.child(&v.0[0]), self.child(&v.0[1])))
             .collect()
     }
     fn attribute_error(&self, name: &str) -> Error {
@@ -163,20 +192,29 @@ impl Py {
 }
 
 fn pystr(s: &str) -> Py {
-    Py(json!({"type":"str", "str":s, "repr":format!("{s:?}")}))
+    Py::literal(json!({"type":"str", "str":s, "repr":format!("{s:?}")}))
 }
 fn map(pairs: Vec<(Py, Py)>) -> Py {
-    Py(json!({"type":"dict", "str":"{}", "repr":"{}", "items":
-        pairs.into_iter().map(|(k,v)| vec![k.0,v.0]).collect::<Vec<_>>()}))
+    let nodes = pairs
+        .iter()
+        .flat_map(|(k, v)| [k, v])
+        .find(|p| !p.1.is_empty())
+        .map(|p| Arc::clone(&p.1))
+        .unwrap_or_default();
+    Py(
+        json!({"type":"dict", "str":"{}", "repr":"{}", "items":
+        pairs.into_iter().map(|(k,v)| vec![k.0,v.0]).collect::<Vec<_>>()}),
+        nodes,
+    )
 }
 fn empty() -> Py {
     map(vec![])
 }
 fn list() -> Py {
-    Py(json!({"type":"list", "str":"[]", "repr":"[]", "items":[]}))
+    Py::literal(json!({"type":"list", "str":"[]", "repr":"[]", "items":[]}))
 }
 fn none() -> Py {
-    Py(json!({"type":"NoneType", "str":"None", "repr":"None"}))
+    Py::literal(json!({"type":"NoneType", "str":"None", "repr":"None"}))
 }
 fn string(s: &str) -> Value {
     json!({"str": s})
@@ -206,9 +244,17 @@ fn equal(a: &Py, b: &Py) -> bool {
     }
     if ["int", "float", "bool"].contains(&a.kind()) && ["int", "float", "bool"].contains(&b.kind())
     {
-        return matches!((a.number(), b.number()), (Ok(x), Ok(y)) if x == y);
+        if a.kind() == "float" && b.kind() == "float" {
+            return matches!((a.number(), b.number()), (Ok(x), Ok(y)) if x == y);
+        }
+        return matches!((a.0["integer"].as_str(), b.0["integer"].as_str()),
+            (Some(x), Some(y)) if x == y);
     }
-    a.kind() == b.kind() && a.repr() == b.repr()
+    if a.kind() == "tuple" && b.kind() == "tuple" {
+        let (a, b) = (a.items(), b.items());
+        return a.len() == b.len() && a.iter().zip(&b).all(|(a, b)| equal(a, b));
+    }
+    a.kind() == b.kind() && a.0["repr"].is_string() && a.repr() == b.repr()
 }
 
 fn as_dict(value: &Py) -> Result<Vec<(Py, Py)>> {
@@ -280,16 +326,16 @@ fn merged_alerting(spec: &Py, slo: &Py) -> Result<Py> {
 /// Decimal strings keep duration parsing and ordering unbounded, as Python int
 /// is. Unicode Nd normalization is a character property supplied by the wire.
 fn duration(value: &Py) -> Result<String> {
-    let source = value.0["decimal"].as_str().unwrap_or(value.string());
+    let source = value.0["decimal"].as_str().unwrap_or(value.display()?);
     let source = source.strip_suffix('\n').unwrap_or(source);
-    let bad = || {
-        invalid(format!(
+    let bad = || -> Result<Error> {
+        Ok(invalid(format!(
             "bad duration {}; expected e.g. 5m, 1h, 30d",
-            value.repr()
-        ))
+            value.representation("repr")?
+        )))
     };
     if source.len() < 2 || !source.as_bytes().last().is_some_and(u8::is_ascii) {
-        return Err(bad());
+        return Err(bad()?);
     }
     let (digits, unit) = source.split_at(source.len() - 1);
     let multiplier = match unit {
@@ -298,10 +344,10 @@ fn duration(value: &Py) -> Result<String> {
         "h" => 3600,
         "d" => 86400,
         "w" => 604800,
-        _ => return Err(bad()),
+        _ => return Err(bad()?),
     };
     if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(bad());
+        return Err(bad()?);
     }
     // Python 3.13's int decimal conversion limit is carried as wire metadata.
     if let Some(message) = value.0["int_error"].as_str() {
@@ -336,7 +382,7 @@ fn validate(spec: &Py) -> Result<()> {
     for slo in spec.get("slos", list())?.iter()? {
         for key in ["name", "service", "objective", "sli"] {
             if !slo.contains(key)? {
-                return Err(invalid(format!("slo missing '{key}': {}", slo.string())));
+                return Err(invalid(format!("slo missing '{key}': {}", slo.display()?)));
             }
         }
         let name = slo.at("name")?;
@@ -362,11 +408,14 @@ fn validate(spec: &Py) -> Result<()> {
         {
             return Err(invalid(format!(
                 "slo name must be lowercase kebab-case: {}",
-                name.repr()
+                name.representation("repr")?
             )));
         }
         if names.contains(&name.string().to_owned()) {
-            return Err(invalid(format!("duplicate slo name {}", name.repr())));
+            return Err(invalid(format!(
+                "duplicate slo name {}",
+                name.representation("repr")?
+            )));
         }
         names.push(name.string().to_owned());
         let objective = slo.at("objective")?;
@@ -374,7 +423,7 @@ fn validate(spec: &Py) -> Result<()> {
         if !(0.0 < ratio && ratio < 100.0) {
             return Err(invalid(format!(
                 "objective must be a percentage in (0, 100): {}",
-                objective.string()
+                objective.display()?
             )));
         }
         let sli = slo.at("sli")?;
@@ -397,13 +446,13 @@ fn validate(spec: &Py) -> Result<()> {
             if decimal_cmp(&long, &short) != Ordering::Greater {
                 return Err(invalid(format!(
                     "long window must exceed short window: {}",
-                    window.string()
+                    window.display()?
                 )));
             }
             if window.at("burn_rate")?.number()? <= 0.0 {
                 return Err(invalid(format!(
                     "burn_rate must be positive: {}",
-                    window.string()
+                    window.display()?
                 )));
             }
         }
@@ -507,16 +556,16 @@ fn recording_rules(spec: &Py, slo: &Py) -> Result<Value> {
         let errors = render(&slo.at("sli")?.at("errors")?, &window)?;
         let total = render(&slo.at("sli")?.at("total")?, &window)?;
         rules.push(rule(
-            format!("slo:sli_error:ratio_rate{}", window.string()),
+            format!("slo:sli_error:ratio_rate{}", window.display()?),
             string(&format!("(({errors}) or vector(0)) / ({total})")),
         )?);
         rules.push(rule(
-            format!("slo:burn_rate:ratio_rate{}", window.string()),
+            format!("slo:burn_rate:ratio_rate{}", window.display()?),
             text(vec![
                 string(&format!(
                     "slo:sli_error:ratio_rate{}{{slo=\"{}\"}} / ",
-                    window.string(),
-                    slo.at("name")?.string()
+                    window.display()?,
+                    slo.at("name")?.display()?
                 )),
                 formatted(budget, 6),
             ]),
@@ -527,8 +576,8 @@ fn recording_rules(spec: &Py, slo: &Py) -> Result<Value> {
         text(vec![
             string(&format!(
                 "1 - (slo:sli_error:ratio_rate{}{{slo=\"{}\"}} / ",
-                period.string(),
-                slo.at("name")?.string()
+                period.display()?,
+                slo.at("name")?.display()?
             )),
             formatted(budget, 6),
             string(")"),
@@ -554,14 +603,14 @@ fn alert_rules(spec: &Py, slo: &Py) -> Result<Value> {
             clauses.extend([
                 string(&format!(
                     "(\n    slo:burn_rate:ratio_rate{}{{slo=\"{}\"}} > ",
-                    w.at("long")?.string(),
+                    w.at("long")?.display()?,
                     name.string()
                 )),
                 formatted(br, 6),
                 string("\n    and\n"),
                 string(&format!(
                     "    slo:burn_rate:ratio_rate{}{{slo=\"{}\"}} > ",
-                    w.at("short")?.string(),
+                    w.at("short")?.display()?,
                     name.string()
                 )),
                 formatted(br, 6),
@@ -575,9 +624,9 @@ fn alert_rules(spec: &Py, slo: &Py) -> Result<Value> {
             .map(|w| {
                 Ok(format!(
                     "{}x over {}/{}",
-                    w.at("burn_rate")?.string(),
-                    w.at("long")?.string(),
-                    w.at("short")?.string()
+                    w.at("burn_rate")?.display()?,
+                    w.at("long")?.display()?,
+                    w.at("short")?.display()?
                 ))
             })
             .collect::<Result<Vec<_>>>()?
@@ -616,9 +665,9 @@ fn alert_rules(spec: &Py, slo: &Py) -> Result<Value> {
             ("team", slo.get("team", pystr("platform-sre"))?.output()),
         ]);
         let description = text(vec![
-            string(&format!("{}. Objective {}% (error budget ", slo.get("description", name.clone())?.string(), slo.at("objective")?.string())),
+            string(&format!("{}. Objective {}% (error budget ", slo.get("description", name.clone())?.display()?, slo.at("objective")?.display()?)),
             formatted(budget * 100.0, 3),
-            string(&format!("% of requests over {}). Both windows of at least one pair ({windows_text}) exceed their burn-rate threshold. Check per-window burn and recent errors on the dashboard; the runbook lists the first diagnostic queries.", slo_window(spec, slo)?.string())),
+            string(&format!("% of requests over {}). Both windows of at least one pair ({windows_text}) exceed their burn-rate threshold. Check per-window burn and recent errors on the dashboard; the runbook lists the first diagnostic queries.", slo_window(spec, slo)?.display()?)),
         ]);
         let annotations = dict(vec![
             (
@@ -648,12 +697,12 @@ fn generate(spec: &Py) -> Result<Value> {
     validate(spec)?;
     let mut groups = vec![];
     for slo in spec.at("slos")?.iter()? {
-        let recording_name = format!("slo-{}-recording", slo.at("name")?.string());
+        let recording_name = format!("slo-{}-recording", slo.at("name")?.display()?);
         groups.push(dict(vec![
             ("name", string(&recording_name)),
             ("rules", recording_rules(spec, &slo)?),
         ]));
-        let alerts_name = format!("slo-{}-alerts", slo.at("name")?.string());
+        let alerts_name = format!("slo-{}-alerts", slo.at("name")?.display()?);
         groups.push(dict(vec![
             ("name", string(&alerts_name)),
             ("rules", alert_rules(spec, &slo)?),
@@ -680,8 +729,12 @@ fn process(request: Value) -> Result<Value> {
     if args.len() != arity {
         return Err(protocol("wrong SLO argument count"));
     }
-    let a = Py(args[0].clone());
-    let b = args.get(1).map(|v| Py(v.clone())).unwrap_or_else(none);
+    let nodes = Arc::new(request["nodes"].as_array().cloned().unwrap_or_default());
+    let a = Py::resolve(args[0].clone(), Arc::clone(&nodes));
+    let b = args
+        .get(1)
+        .map(|v| Py::resolve(v.clone(), nodes))
+        .unwrap_or_else(none);
     match op {
         "generate" => generate(&a),
         "validate" => {
@@ -777,15 +830,57 @@ mod tests {
     use super::*;
 
     #[test]
+    fn numeric_key_comparisons_do_not_round_integers() {
+        fn integer(value: &str) -> Py {
+            Py::literal(json!({"type":"int", "integer":value}))
+        }
+        let a = integer("0x20000000000000");
+        let b = integer("0x20000000000001");
+        let float = Py::literal(json!({"type":"float", "integer":"0x20000000000000",
+            "number":{"bits":"4340000000000000"}}));
+        assert!(!equal(&a, &b));
+        assert!(equal(&a, &float));
+        assert!(!equal(&b, &float));
+        let mut pairs = vec![(a, pystr("old"))];
+        update(&mut pairs, vec![(b, pystr("new"))]).unwrap();
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0].1.string(), "old");
+        assert_eq!(pairs[1].1.string(), "new");
+    }
+
+    #[test]
+    fn graph_cycles_and_unread_representation_errors_preserve_validation_order() {
+        let nodes = Arc::new(vec![
+            json!({"id":0,"type":"dict", "items":[
+                [{"node":1},{"node":2}], [{"node":3},{"node":4}]],
+                "str_error":{"type":"ValueError","message":"unread metadata"}}),
+            json!({"id":1,"type":"str","str":"apiVersion"}),
+            json!({"id":2,"type":"str","str":"wrong"}),
+            json!({"id":3,"type":"str","str":"metadata"}),
+            json!({"id":4,"type":"list","items":[{"node":4}]}),
+        ]);
+        let source = Py::resolve(json!({"node":0}), nodes);
+        let failure = validate(&source).unwrap_err();
+        assert_eq!(failure.kind, "ValueError");
+        assert_eq!(failure.message, "apiVersion must be lab/v1");
+        let metadata = source.at("metadata").unwrap();
+        assert_eq!(metadata.items()[0].output(), json!({"ref":4}));
+        assert_eq!(metadata.output(), json!({"ref":4}));
+        assert_eq!(source.display().unwrap_err().message, "unread metadata");
+    }
+
+    #[test]
     fn complete_spec_constructs_recording_then_alert_groups() {
         fn number(n: f64) -> Py {
-            Py(
+            Py::literal(
                 json!({"type":"float","str":n.to_string(),"repr":n.to_string(),
                 "number":{"bits":format!("{:016x}",n.to_bits())}}),
             )
         }
         fn input_list(items: Vec<Py>) -> Py {
-            Py(json!({"type":"list","items":items.into_iter().map(|p| p.0).collect::<Vec<_>>()}))
+            Py::literal(
+                json!({"type":"list","items":items.into_iter().map(|p| p.0).collect::<Vec<_>>()}),
+            )
         }
         fn input_map(items: Vec<(&str, Py)>) -> Py {
             map(items.into_iter().map(|(k, v)| (pystr(k), v)).collect())

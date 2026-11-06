@@ -520,6 +520,111 @@ def test_wire_scalar_roundtrip_preserves_python_types_and_long_integer_products(
     assert wire.unpack({"integer": "604799" + "9" * 4294 + "395200"}) == expected
 
 
+def test_wire_ignored_metadata_is_finite_and_defers_representation_errors():
+    recursive = []
+    recursive.append(recursive)
+    large = 10**4400
+    source = synthetic_spec()
+    source["metadata"] = {"recursive": recursive, "large": large}
+    wire = slo_native._Wire()
+    root = wire.pack(source)
+    json.dumps(wire.json_safe({"args": [root], "nodes": wire.nodes}), allow_nan=False)
+    recursive_node = next(n for n, v in zip(wire.nodes, wire.refs, strict=True) if v is recursive)
+    assert recursive_node["items"] == [{"node": recursive_node["id"]}]
+    large_node = next(n for n, v in zip(wire.nodes, wire.refs, strict=True) if v is large)
+    assert large_node["str_error"]["type"] == "ValueError"
+    assert large_node["integer"] == hex(large)
+    assert wire.unpack({"ref": recursive_node["id"]}) is recursive
+
+
+def test_wire_numeric_keys_retain_exact_integers():
+    wire = slo_native._Wire()
+    values = [2**53, 2**53 + 1, float(2**53), True, 1, 2**4400]
+    nodes = [wire.pack(v) for v in values]
+    assert nodes[0]["number"] == nodes[1]["number"]
+    assert nodes[0]["integer"] != nodes[1]["integer"]
+    assert nodes[0]["integer"] == nodes[2]["integer"]
+    assert nodes[3]["integer"] == nodes[4]["integer"]
+    assert nodes[5]["integer"] == hex(values[5])
+
+
+@pytest.mark.parametrize("invalid", [False, True])
+def test_wire_ignored_metadata_reaches_native_lookup(monkeypatch, invalid):
+    source = synthetic_spec()
+    source["metadata"] = []
+    source["metadata"].extend([source["metadata"], 10**4400])
+    if invalid:
+        source["apiVersion"] = "wrong"
+    calls = []
+
+    def lookup():
+        calls.append(True)
+        raise LookupError("native lookup sentinel")
+
+    monkeypatch.setattr(slo_native, "_library", lookup)
+    with pytest.raises(LookupError, match="native lookup sentinel"):
+        slo_gen.validate_spec(source)
+    assert calls == [True]
+
+
+@pytest.mark.parametrize("invalid", [False, True])
+def test_ignored_metadata_preserves_generation_and_first_validation_error(invalid):
+    source = synthetic_spec()
+    recursive = []
+    recursive.append(recursive)
+    source["metadata"] = {"recursive": recursive, "large": 10**4400}
+    if invalid:
+        source["apiVersion"] = "wrong"
+    assert_parity("validate_spec", source)
+    assert_parity("generate", source)
+
+
+def test_recursive_yaml_metadata_cli_matches_frozen_oracle(tmp_path):
+    source = slo_gen.DEFAULT_SPEC.read_text() + "\nmetadata: &note [*note]\n"
+    spec_path = tmp_path / "recursive.yaml"
+    spec_path.write_text(source)
+    paths = [tmp_path / "old.yml", tmp_path / "new.yml"]
+    for module, output in zip((ORACLE, slo_gen), paths, strict=True):
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert module.main(["--spec", str(spec_path), "--out", str(output)]) == 0
+    assert paths[0].read_bytes() == paths[1].read_bytes()
+
+
+def test_merge_preserves_opaque_recursive_values_and_large_integer_keys():
+    source = synthetic_spec()
+    recursive = []
+    recursive.append(recursive)
+    base = source["defaults"]["alerting"]["page"]
+    base.update({2**53: "old", "metadata": recursive})
+    slo = source["slos"][0]
+    slo["alerting"] = {"page": {2**53 + 1: "new", float(2**53): "same-key"}}
+    expected = ORACLE.merged_alerting(source, slo)
+    actual = slo_gen.merged_alerting(source, slo)
+    assert list(actual["page"]) == list(expected["page"])
+    assert actual["page"][2**53] == "same-key"
+    assert actual["page"][2**53 + 1] == "new"
+    assert actual["page"]["metadata"] is recursive
+
+
+@pytest.mark.parametrize(
+    "old_key,new_key",
+    [
+        (2**53, 2**53 + 1),
+        (2**53 + 1, float(2**53)),
+        (-(2**53) - 1, float(-(2**53))),
+        (1, True),
+        (2**100, float(2**100)),
+        ((2**53,), (2**53 + 1,)),
+    ],
+)
+def test_merge_numeric_key_equality_matches_python(old_key, new_key):
+    source = synthetic_spec()
+    source["defaults"]["alerting"]["page"][old_key] = "old"
+    slo = source["slos"][0]
+    slo["alerting"] = {"page": {new_key: "new"}}
+    assert_parity("merged_alerting", source, slo)
+
+
 @pytest.mark.parametrize("source_changed", [False, True])
 def test_explicit_builder_discovers_shared_cargo_artifact_and_stages_manifest(
     tmp_path, monkeypatch, source_changed
