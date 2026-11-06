@@ -117,6 +117,7 @@ impl Py {
                 "TypeError",
                 match self.kind() {
                     "str" => "string indices must be integers, not 'str'".into(),
+                    "bytes" => "byte indices must be integers or slices, not str".into(),
                     "list" | "tuple" => format!(
                         "{} indices must be integers or slices, not str",
                         self.kind()
@@ -842,6 +843,17 @@ pub unsafe extern "C" fn slo_core_free(ptr: *mut u8, len: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn binary_window_string_keys_keep_python_subscript_error() {
+        let binary = Py::literal(json!({"type":"bytes"}));
+        let failure = binary.at("long").unwrap_err();
+        assert_eq!(failure.kind, "TypeError");
+        assert_eq!(
+            failure.message,
+            "byte indices must be integers or slices, not str"
+        );
+    }
 
     #[test]
     fn yaml_bytes_and_sets_supply_dictionary_item_iteration() {

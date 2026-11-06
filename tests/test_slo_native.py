@@ -632,6 +632,28 @@ def test_yaml_set_membership_keeps_validation_and_render_error_order():
     assert_parity("generate", source)
 
 
+def test_binary_window_keeps_exact_subscript_error_in_helpers_and_cli(tmp_path):
+    source = synthetic_spec()
+    source["defaults"]["alerting"]["page"]["windows"] = [b"ab"]
+    loaded = yaml.safe_load(yaml.safe_dump(source))
+    for operation in ("validate_spec", "generate"):
+        expected = outcome(getattr(ORACLE, operation), loaded)
+        assert expected == (
+            "error",
+            "TypeError",
+            "byte indices must be integers or slices, not str",
+        )
+        assert_parity(operation, loaded)
+    for operation in ("recording_rules", "alert_rules"):
+        assert_parity(operation, loaded, loaded["slos"][0])
+    spec_path = tmp_path / "binary-window.yaml"
+    spec_path.write_text(yaml.safe_dump(source))
+    output = tmp_path / "rules.yaml"
+    args = ["--spec", str(spec_path), "--out", str(output)]
+    assert invoke_main(slo_gen.main, args) == invoke_main(ORACLE.main, args)
+    assert not output.exists()
+
+
 @pytest.mark.parametrize("invalid", [False, True])
 def test_wire_ignored_metadata_reaches_native_lookup(monkeypatch, invalid):
     source = synthetic_spec()
