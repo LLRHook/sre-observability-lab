@@ -604,14 +604,14 @@ fn alert_rules(spec: &Py, slo: &Py) -> Result<Value> {
                 string(&format!(
                     "(\n    slo:burn_rate:ratio_rate{}{{slo=\"{}\"}} > ",
                     w.at("long")?.display()?,
-                    name.string()
+                    name.display()?
                 )),
                 formatted(br, 6),
                 string("\n    and\n"),
                 string(&format!(
                     "    slo:burn_rate:ratio_rate{}{{slo=\"{}\"}} > ",
                     w.at("short")?.display()?,
-                    name.string()
+                    name.display()?
                 )),
                 formatted(br, 6),
                 string("\n  )"),

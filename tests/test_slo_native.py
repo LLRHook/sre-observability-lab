@@ -379,6 +379,19 @@ def test_direct_rule_helper_import_contracts_without_implicit_validation(field, 
         assert_parity(operation, source, slo)
 
 
+@pytest.mark.parametrize("populated", [True, False])
+def test_alert_helper_defers_large_name_error_until_clause_interpolation(populated):
+    source = synthetic_spec()
+    slo = source["slos"][0]
+    slo["name"] = 10**4400
+    if not populated:
+        source["defaults"]["alerting"]["page"]["windows"] = []
+    expected = outcome(ORACLE.alert_rules, source, slo)
+    assert expected[0] == "error"
+    assert expected[1] == ("ValueError" if populated else "AttributeError")
+    assert_parity("alert_rules", source, slo)
+
+
 def invoke_main(function, args):
     stdout, stderr = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
